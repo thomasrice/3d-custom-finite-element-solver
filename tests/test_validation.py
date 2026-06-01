@@ -2,7 +2,7 @@ import numpy as np
 
 from fem3d.cli import main
 from fem3d.validation import ConvergenceRow, convergence_rates, write_convergence_csv
-from fem3d.demo_cases import run_beam_case, run_convergence_study
+from fem3d.workflows import run_beam_case, run_convergence_study
 
 
 def test_convergence_rates_and_csv_report(tmp_path):
@@ -35,7 +35,7 @@ def test_cli_writes_convergence_csv(tmp_path, capsys):
     assert "L2 rate" in capsys.readouterr().out
 
 
-def test_demo_cases_write_expected_artifacts(tmp_path):
+def test_workflows_write_expected_artifacts(tmp_path):
     beam = run_beam_case(tmp_path / "beam.vtk", nx=2, ny=1, nz=1)
     convergence = run_convergence_study([2, 4], csv=tmp_path / "convergence.csv")
 

@@ -42,18 +42,20 @@ class TetMesh:
         return np.flatnonzero(mask)
 
     def boundary_faces(self) -> np.ndarray:
-        faces: dict[tuple[int, int, int], tuple[int, int, int] | None] = {}
-        for tet in self.elements:
-            local_faces = (
-                (tet[1], tet[2], tet[3]),
-                (tet[0], tet[3], tet[2]),
-                (tet[0], tet[1], tet[3]),
-                (tet[0], tet[2], tet[1]),
-            )
-            for face in local_faces:
+        faces, _ = self.boundary_faces_with_owners()
+        return faces
+
+    def boundary_faces_with_owners(self) -> tuple[np.ndarray, np.ndarray]:
+        faces: dict[tuple[int, int, int], tuple[tuple[int, int, int], int] | None] = {}
+        for element_index, tet in enumerate(self.elements):
+            for face in _local_tet_faces(tet):
                 key = tuple(sorted(int(i) for i in face))
-                faces[key] = None if key in faces else tuple(int(i) for i in face)
-        return np.array([face for face in faces.values() if face is not None], dtype=np.int64)
+                faces[key] = None if key in faces else (tuple(int(i) for i in face), element_index)
+        boundary = [face for face in faces.values() if face is not None]
+        return (
+            np.array([face for face, _ in boundary], dtype=np.int64),
+            np.array([owner for _, owner in boundary], dtype=np.int64),
+        )
 
     def faces_on(self, predicate: Callable[[np.ndarray], np.ndarray]) -> np.ndarray:
         boundary_faces = self.boundary_faces()
@@ -108,6 +110,15 @@ class MeshQuality:
     max_signed_volume: float
     min_scaled_jacobian: float
     inverted_elements: np.ndarray
+
+
+def _local_tet_faces(tet: np.ndarray) -> tuple[tuple[int, int, int], ...]:
+    return (
+        (tet[1], tet[2], tet[3]),
+        (tet[0], tet[3], tet[2]),
+        (tet[0], tet[1], tet[3]),
+        (tet[0], tet[2], tet[1]),
+    )
 
 
 def box_mesh(

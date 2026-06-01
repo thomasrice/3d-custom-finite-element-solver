@@ -7,7 +7,8 @@ import numpy as np
 
 from fem3d.boundary import DirichletBC
 from fem3d.material import IsotropicMaterial
-from fem3d.mesh import box_mesh
+from fem3d.mesh import TetMesh, box_mesh
+from fem3d.rendering import render_convergence_png, render_deformed_surface_png
 from fem3d.recovery import (
     element_strains,
     element_stresses,
@@ -17,6 +18,7 @@ from fem3d.recovery import (
 )
 from fem3d.solver import (
     LinearElasticityProblem,
+    SolveResult,
     TractionLoad,
     solve_linear_elasticity,
     solve_linear_elasticity_result,
@@ -97,6 +99,17 @@ class ConvergencePlotResult:
     png: Path
 
 
+@dataclass(frozen=True)
+class BeamSolve:
+    mesh: TetMesh
+    material: IsotropicMaterial
+    result: SolveResult
+    fixed_nodes: np.ndarray
+    length: float
+    width: float
+    height: float
+
+
 def run_beam_case(
     output: str | Path,
     nx: int = 8,
@@ -104,29 +117,12 @@ def run_beam_case(
     nz: int = 2,
 ) -> BeamResult:
     output_path = Path(output)
-    length = 4.0
-    mesh = box_mesh(nx, ny, nz, lengths=(length, 1.0, 1.0))
-    fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
-    loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], length))
-    material = IsotropicMaterial(young=1000.0, poisson=0.3)
-    problem = LinearElasticityProblem(
-        mesh=mesh,
-        material=material,
-        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
-        traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -1.0])),),
-    )
-    result = solve_linear_elasticity_result(problem)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    write_vtk(
-        output_path,
-        mesh,
-        result.displacement,
-        cell_data=_elastic_cell_data(mesh, result.displacement, material),
-    )
+    beam = _solve_clamped_beam(nx, ny, nz, end_traction=-1.0)
+    _write_elastic_vtk(output_path, beam.mesh, beam.result.displacement, beam.material)
     return BeamResult(
         output=output_path,
-        max_displacement=float(np.linalg.norm(result.displacement, axis=1).max()),
-        support_reaction=result.reactions[fixed].sum(axis=0),
+        max_displacement=_max_displacement(beam.result.displacement),
+        support_reaction=beam.result.reactions[beam.fixed_nodes].sum(axis=0),
     )
 
 
@@ -140,32 +136,15 @@ def run_deformed_mesh_render_demo(
 ) -> DeformedMeshRenderResult:
     png_path = Path(png)
     vtk_path = Path(vtk)
-    length = 4.0
-    mesh = box_mesh(nx, ny, nz, lengths=(length, 1.0, 1.0))
-    fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
-    loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], length))
-    material = IsotropicMaterial(young=1000.0, poisson=0.3)
-    problem = LinearElasticityProblem(
-        mesh=mesh,
-        material=material,
-        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
-        traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -1.0])),),
-    )
-    result = solve_linear_elasticity_result(problem)
-    stress = element_stresses(mesh, result.displacement, material)
+    beam = _solve_clamped_beam(nx, ny, nz, end_traction=-1.0)
+    stress = element_stresses(beam.mesh, beam.result.displacement, beam.material)
     equivalent_stress = von_mises(stress)
-    vtk_path.parent.mkdir(parents=True, exist_ok=True)
-    write_vtk(
-        vtk_path,
-        mesh,
-        result.displacement,
-        cell_data=_elastic_cell_data(mesh, result.displacement, material),
-    )
+    _write_elastic_vtk(vtk_path, beam.mesh, beam.result.displacement, beam.material)
     png_path.parent.mkdir(parents=True, exist_ok=True)
-    _render_deformed_surface_png(
+    render_deformed_surface_png(
         png_path,
-        mesh,
-        result.displacement,
+        beam.mesh,
+        beam.result.displacement,
         equivalent_stress,
         displacement_scale,
     )
@@ -199,32 +178,27 @@ def run_bending_refinement_demo(
         nx = 4 * level
         ny = level
         nz = level
-        mesh = box_mesh(nx, ny, nz, lengths=(length, width, height))
-        fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
-        loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], length))
-        problem = LinearElasticityProblem(
-            mesh=mesh,
+        beam = _solve_clamped_beam(
+            nx,
+            ny,
+            nz,
+            length=length,
+            width=width,
+            height=height,
             material=material,
-            dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
-            traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, end_traction])),),
+            end_traction=end_traction,
         )
-        result = solve_linear_elasticity_result(problem)
-        tip_nodes = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], length))
-        tip_deflection = float(result.displacement[tip_nodes, 2].mean())
+        tip_nodes = _right_face_nodes(beam.mesh, beam.length)
+        tip_deflection = float(beam.result.displacement[tip_nodes, 2].mean())
         vtk = output_path / f"bending_level_{level}.vtk"
-        write_vtk(
-            vtk,
-            mesh,
-            result.displacement,
-            cell_data=_elastic_cell_data(mesh, result.displacement, material),
-        )
+        _write_elastic_vtk(vtk, beam.mesh, beam.result.displacement, beam.material)
         rows.append(
             BendingRefinementRow(
                 level=level,
                 nx=nx,
                 ny=ny,
                 nz=nz,
-                dofs=3 * mesh.n_nodes,
+                dofs=3 * beam.mesh.n_nodes,
                 tip_deflection=tip_deflection,
                 euler_bernoulli_tip_deflection=true_tip,
                 vtk=vtk,
@@ -241,32 +215,14 @@ def run_self_weight_beam_demo(
     nz: int = 2,
 ) -> SelfWeightBeamResult:
     output_path = Path(output)
-    length = 4.0
-    width = 1.0
-    height = 1.0
     body_force = np.array([0.0, 0.0, -0.4])
-    mesh = box_mesh(nx, ny, nz, lengths=(length, width, height))
-    fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
-    material = IsotropicMaterial(young=1000.0, poisson=0.3)
-    problem = LinearElasticityProblem(
-        mesh=mesh,
-        material=material,
-        body_force=body_force,
-        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
-    )
-    result = solve_linear_elasticity_result(problem)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    write_vtk(
-        output_path,
-        mesh,
-        result.displacement,
-        cell_data=_elastic_cell_data(mesh, result.displacement, material),
-    )
+    beam = _solve_clamped_beam(nx, ny, nz, body_force=body_force)
+    _write_elastic_vtk(output_path, beam.mesh, beam.result.displacement, beam.material)
     return SelfWeightBeamResult(
         output=output_path,
-        max_displacement=float(np.linalg.norm(result.displacement, axis=1).max()),
-        support_reaction=result.reactions[fixed].sum(axis=0),
-        total_body_force=body_force * length * width * height,
+        max_displacement=_max_displacement(beam.result.displacement),
+        support_reaction=beam.result.reactions[beam.fixed_nodes].sum(axis=0),
+        total_body_force=body_force * beam.length * beam.width * beam.height,
     )
 
 
@@ -367,7 +323,12 @@ def run_convergence_plot_demo(
     png_path = Path(png)
     study = run_convergence_study(levels, vtk_dir=vtk_dir, csv=csv)
     png_path.parent.mkdir(parents=True, exist_ok=True)
-    _render_convergence_png(png_path, study)
+    render_convergence_png(
+        png_path,
+        np.array([row.h for row in study.rows], dtype=float),
+        np.array([row.l2 for row in study.rows], dtype=float),
+        np.array([row.h1_seminorm for row in study.rows], dtype=float),
+    )
     return ConvergencePlotResult(study=study, png=png_path)
 
 
@@ -446,6 +407,64 @@ def format_convergence_plot_result(result: ConvergencePlotResult) -> str:
     return "\n".join(lines)
 
 
+def _solve_clamped_beam(
+    nx: int,
+    ny: int,
+    nz: int,
+    length: float = 4.0,
+    width: float = 1.0,
+    height: float = 1.0,
+    material: IsotropicMaterial | None = None,
+    end_traction: float | None = None,
+    body_force: np.ndarray | None = None,
+) -> BeamSolve:
+    mesh = box_mesh(nx, ny, nz, lengths=(length, width, height))
+    fixed = _left_face_nodes(mesh)
+    traction_loads = ()
+    if end_traction is not None:
+        loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], length))
+        traction_loads = (TractionLoad(loaded_faces, np.array([0.0, 0.0, end_traction])),)
+    beam_material = IsotropicMaterial(young=1000.0, poisson=0.3) if material is None else material
+    problem = LinearElasticityProblem(
+        mesh=mesh,
+        material=beam_material,
+        body_force=body_force,
+        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
+        traction_loads=traction_loads,
+    )
+    return BeamSolve(
+        mesh=mesh,
+        material=beam_material,
+        result=solve_linear_elasticity_result(problem),
+        fixed_nodes=fixed,
+        length=length,
+        width=width,
+        height=height,
+    )
+
+
+def _write_elastic_vtk(
+    path: Path,
+    mesh: TetMesh,
+    displacement: np.ndarray,
+    material: IsotropicMaterial,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_vtk(path, mesh, displacement, cell_data=_elastic_cell_data(mesh, displacement, material))
+
+
+def _left_face_nodes(mesh: TetMesh) -> np.ndarray:
+    return mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
+
+
+def _right_face_nodes(mesh: TetMesh, length: float) -> np.ndarray:
+    return mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], length))
+
+
+def _max_displacement(displacement: np.ndarray) -> float:
+    return float(np.linalg.norm(displacement, axis=1).max())
+
+
 def _write_bending_refinement_csv(path: Path, rows: list[BendingRefinementRow]) -> None:
     with path.open("w", encoding="utf-8") as fh:
         fh.write("level,nx,ny,nz,dofs,tip_deflection,euler_bernoulli_tip_deflection,ratio\n")
@@ -456,99 +475,6 @@ def _write_bending_refinement_csv(path: Path, rows: list[BendingRefinementRow]) 
                 f"{row.tip_deflection:.16e},{row.euler_bernoulli_tip_deflection:.16e},"
                 f"{ratio:.16e}\n"
             )
-
-
-def _render_deformed_surface_png(
-    path: Path,
-    mesh,
-    displacement: np.ndarray,
-    cell_values: np.ndarray,
-    displacement_scale: float,
-) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-
-    deformed = mesh.nodes + displacement_scale * displacement
-    faces, values = _boundary_faces_with_cell_values(mesh, cell_values)
-    polygons = [deformed[face] for face in faces]
-    collection = Poly3DCollection(polygons, linewidths=0.25, edgecolors="0.25")
-    collection.set_array(values)
-    collection.set_cmap("viridis")
-    collection.set_clim(float(values.min()), float(values.max()))
-
-    fig = plt.figure(figsize=(8, 5), constrained_layout=True)
-    ax = fig.add_subplot(111, projection="3d")
-    ax.add_collection3d(collection)
-    _set_equal_3d_axes(ax, deformed)
-    ax.view_init(elev=22, azim=-58)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
-    colorbar = fig.colorbar(collection, ax=ax, shrink=0.7, pad=0.02)
-    colorbar.set_label("von Mises stress")
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def _render_convergence_png(path: Path, study: ConvergenceStudy) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    h = np.array([row.h for row in study.rows], dtype=float)
-    l2 = np.array([row.l2 for row in study.rows], dtype=float)
-    h1 = np.array([row.h1_seminorm for row in study.rows], dtype=float)
-
-    fig, ax = plt.subplots(figsize=(7, 5), constrained_layout=True)
-    ax.loglog(h, l2, "o-", label=_slope_label("L2", study.l2_rate))
-    ax.loglog(h, h1, "s-", label=_slope_label("H1 seminorm", study.h1_rate))
-    ax.invert_xaxis()
-    ax.grid(True, which="both", linestyle=":", linewidth=0.7)
-    ax.set_xlabel("mesh size h")
-    ax.set_ylabel("error norm")
-    ax.legend()
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def _slope_label(name: str, rate: float | None) -> str:
-    return name if rate is None else f"{name} slope {rate:.2f}"
-
-
-def _boundary_faces_with_cell_values(mesh, cell_values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    candidates: dict[tuple[int, int, int], tuple[tuple[int, int, int], float] | None] = {}
-    for element_index, tet in enumerate(mesh.elements):
-        local_faces = (
-            (tet[1], tet[2], tet[3]),
-            (tet[0], tet[3], tet[2]),
-            (tet[0], tet[1], tet[3]),
-            (tet[0], tet[2], tet[1]),
-        )
-        for face in local_faces:
-            key = tuple(sorted(int(i) for i in face))
-            if key in candidates:
-                candidates[key] = None
-            else:
-                candidates[key] = (tuple(int(i) for i in face), float(cell_values[element_index]))
-    boundary = [entry for entry in candidates.values() if entry is not None]
-    return (
-        np.array([face for face, _ in boundary], dtype=np.int64),
-        np.array([value for _, value in boundary], dtype=float),
-    )
-
-
-def _set_equal_3d_axes(ax, points: np.ndarray) -> None:
-    mins = points.min(axis=0)
-    maxs = points.max(axis=0)
-    center = 0.5 * (mins + maxs)
-    radius = 0.5 * float((maxs - mins).max())
-    ax.set_xlim(center[0] - radius, center[0] + radius)
-    ax.set_ylim(center[1] - radius, center[1] + radius)
-    ax.set_zlim(center[2] - radius, center[2] + radius)
 
 
 def _box_boundary_nodes(mesh) -> np.ndarray:

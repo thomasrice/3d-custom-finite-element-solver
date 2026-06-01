@@ -18,6 +18,18 @@ def test_box_mesh_counts_and_boundary_faces():
     assert len(right_faces) == 2
 
 
+def test_boundary_faces_report_owner_element_indices():
+    mesh = box_mesh(1, 1, 1)
+
+    faces, owners = mesh.boundary_faces_with_owners()
+
+    assert faces.shape == (12, 3)
+    assert owners.shape == (12,)
+    assert np.all(owners >= 0)
+    assert np.all(owners < mesh.n_elements)
+    assert np.array_equal(faces, mesh.boundary_faces())
+
+
 def test_box_mesh_quality_is_valid():
     mesh = box_mesh(2, 2, 2)
     quality = mesh.quality()

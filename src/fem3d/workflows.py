@@ -75,6 +75,14 @@ class BendingRefinementStudy:
     csv: Path
 
 
+@dataclass(frozen=True)
+class SelfWeightBeamResult:
+    output: Path
+    max_displacement: float
+    support_reaction: np.ndarray
+    total_body_force: np.ndarray
+
+
 def run_beam_case(
     output: str | Path,
     nx: int = 8,
@@ -163,6 +171,42 @@ def run_bending_refinement_demo(
         )
     _write_bending_refinement_csv(csv_path, rows)
     return BendingRefinementStudy(rows=rows, csv=csv_path)
+
+
+def run_self_weight_beam_demo(
+    output: str | Path = Path("results/self_weight_beam.vtk"),
+    nx: int = 8,
+    ny: int = 2,
+    nz: int = 2,
+) -> SelfWeightBeamResult:
+    output_path = Path(output)
+    length = 4.0
+    width = 1.0
+    height = 1.0
+    body_force = np.array([0.0, 0.0, -0.4])
+    mesh = box_mesh(nx, ny, nz, lengths=(length, width, height))
+    fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
+    material = IsotropicMaterial(young=1000.0, poisson=0.3)
+    problem = LinearElasticityProblem(
+        mesh=mesh,
+        material=material,
+        body_force=body_force,
+        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
+    )
+    result = solve_linear_elasticity_result(problem)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_vtk(
+        output_path,
+        mesh,
+        result.displacement,
+        cell_data=_elastic_cell_data(mesh, result.displacement, material),
+    )
+    return SelfWeightBeamResult(
+        output=output_path,
+        max_displacement=float(np.linalg.norm(result.displacement, axis=1).max()),
+        support_reaction=result.reactions[fixed].sum(axis=0),
+        total_body_force=body_force * length * width * height,
+    )
 
 
 def run_uniaxial_tension_demo(
@@ -275,6 +319,17 @@ def format_bending_refinement_study(result: BendingRefinementStudy) -> str:
         lines.append(f"wrote {row.vtk}")
     lines.append(f"wrote {result.csv}")
     return "\n".join(lines)
+
+
+def format_self_weight_beam_result(result: SelfWeightBeamResult) -> str:
+    return "\n".join(
+        (
+            f"wrote {result.output}",
+            f"max |u| = {result.max_displacement:.6e}",
+            f"total body force = {result.total_body_force}",
+            f"support reaction = {result.support_reaction}",
+        )
+    )
 
 
 def format_uniaxial_tension_result(result: UniaxialTensionResult) -> str:

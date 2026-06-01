@@ -37,3 +37,10 @@ Generate a simple loaded beam result for ParaView:
 ```bash
 python examples/beam_traction.py --output results/beam_traction.vtk
 ```
+
+After installing the package, the same workflows are available as CLI commands:
+
+```bash
+fem3d convergence --levels 2 4 8 --csv results/convergence.csv
+fem3d beam --output results/beam_traction.vtk
+```

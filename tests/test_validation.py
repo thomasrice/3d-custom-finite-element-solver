@@ -1,5 +1,6 @@
 import numpy as np
 
+from fem3d.cli import main
 from fem3d.validation import ConvergenceRow, convergence_rates, write_convergence_csv
 
 
@@ -22,3 +23,12 @@ def test_convergence_rates_and_csv_report(tmp_path):
         "0.25,375,6.2500000000000000e-02,2.5000000000000000e-01",
         "0.125,2187,1.5625000000000000e-02,1.2500000000000000e-01",
     ]
+
+
+def test_cli_writes_convergence_csv(tmp_path, capsys):
+    path = tmp_path / "convergence.csv"
+
+    main(["convergence", "--levels", "2", "4", "--csv", str(path)])
+
+    assert path.exists()
+    assert "L2 rate" in capsys.readouterr().out

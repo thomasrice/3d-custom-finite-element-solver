@@ -7,13 +7,19 @@ import numpy as np
 from fem3d.mesh import TetMesh
 
 
-def write_vtk(path: str | Path, mesh: TetMesh, displacement: np.ndarray | None = None) -> None:
+def write_vtk(
+    path: str | Path,
+    mesh: TetMesh,
+    displacement: np.ndarray | None = None,
+    cell_data: dict[str, np.ndarray] | None = None,
+) -> None:
     """Write a legacy ASCII VTK unstructured grid readable by ParaView."""
 
     path = Path(path)
     displacement_array = None if displacement is None else np.asarray(displacement, dtype=float)
     if displacement_array is not None and displacement_array.shape != (mesh.n_nodes, 3):
         raise ValueError("displacement must have shape (n_nodes, 3)")
+    checked_cell_data = _check_cell_data(mesh, cell_data or {})
 
     with path.open("w", encoding="utf-8") as fh:
         fh.write("# vtk DataFile Version 3.0\n")
@@ -35,3 +41,40 @@ def write_vtk(path: str | Path, mesh: TetMesh, displacement: np.ndarray | None =
             fh.write("VECTORS displacement float\n")
             for ux, uy, uz in displacement_array:
                 fh.write(f"{ux:.16g} {uy:.16g} {uz:.16g}\n")
+        if checked_cell_data:
+            fh.write(f"CELL_DATA {mesh.n_elements}\n")
+            for name, values in checked_cell_data.items():
+                _write_cell_data_array(fh, name, values)
+
+
+def _check_cell_data(mesh: TetMesh, cell_data: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    checked: dict[str, np.ndarray] = {}
+    for name, values in cell_data.items():
+        if not name.replace("_", "").isalnum():
+            raise ValueError(f"invalid VTK cell data name {name!r}")
+        array = np.asarray(values, dtype=float)
+        if array.shape not in {(mesh.n_elements,), (mesh.n_elements, 3), (mesh.n_elements, 6)}:
+            raise ValueError(
+                "cell data arrays must have shape (n_elements,), "
+                "(n_elements, 3), or (n_elements, 6)"
+            )
+        checked[name] = array
+    return checked
+
+
+def _write_cell_data_array(fh, name: str, values: np.ndarray) -> None:
+    if values.ndim == 1:
+        fh.write(f"SCALARS {name} float 1\n")
+        fh.write("LOOKUP_TABLE default\n")
+        for value in values:
+            fh.write(f"{value:.16g}\n")
+    elif values.shape[1] == 3:
+        fh.write(f"VECTORS {name} float\n")
+        for row in values:
+            fh.write(f"{row[0]:.16g} {row[1]:.16g} {row[2]:.16g}\n")
+    else:
+        fh.write(f"TENSORS {name} float\n")
+        for xx, yy, zz, xy, yz, xz in values:
+            fh.write(f"{xx:.16g} {xy:.16g} {xz:.16g}\n")
+            fh.write(f"{xy:.16g} {yy:.16g} {yz:.16g}\n")
+            fh.write(f"{xz:.16g} {yz:.16g} {zz:.16g}\n")

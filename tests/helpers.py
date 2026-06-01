@@ -25,6 +25,16 @@ def rigid_displacement(points: np.ndarray) -> np.ndarray:
     return translation + np.cross(np.tile(omega, (len(points), 1)), points)
 
 
+def affine_displacement(points: np.ndarray) -> np.ndarray:
+    return np.column_stack(
+        (
+            0.01 + 0.02 * points[:, 0] - 0.03 * points[:, 1] + 0.01 * points[:, 2],
+            -0.02 + 0.04 * points[:, 1] + 0.01 * points[:, 2],
+            0.03 - 0.02 * points[:, 0] + 0.05 * points[:, 2],
+        )
+    )
+
+
 def clamped_beam_problem(
     traction: np.ndarray,
     nx: int = 4,

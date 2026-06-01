@@ -9,7 +9,6 @@ from fem3d.solver import (
     LinearElasticityProblem,
     SolverOptions,
     TractionLoad,
-    assemble_load_vector,
     assemble_system,
     reaction_forces,
     solve_linear_elasticity,
@@ -96,8 +95,8 @@ def test_reactions_balance_applied_traction_load():
 
     displacement = solve_linear_elasticity(problem)
     system = assemble_system(problem)
-    reactions = reaction_forces(problem, displacement, system=system)
-    applied_load = assemble_load_vector(problem).reshape(mesh.n_nodes, 3).sum(axis=0)
+    reactions = reaction_forces(system, displacement)
+    applied_load = system.rhs.reshape(mesh.n_nodes, 3).sum(axis=0)
     support_reaction = reactions[fixed].sum(axis=0)
 
     assert np.allclose(support_reaction + applied_load, 0.0, atol=1e-10)
@@ -117,7 +116,8 @@ def test_solve_result_returns_reactions_from_shared_system():
 
     result = solve_linear_elasticity_result(problem)
 
-    assert np.allclose(result.reactions, reaction_forces(problem, result.displacement))
+    system = assemble_system(problem)
+    assert np.allclose(result.reactions, reaction_forces(system, result.displacement))
     assert np.allclose(result.reactions.reshape(-1), result.residual)
 
 

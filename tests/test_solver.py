@@ -63,6 +63,21 @@ def test_traction_assembly_distributes_constant_face_load():
     assert np.allclose(rhs[2::3], 0.0)
 
 
+def test_traction_assembly_integrates_linear_face_load():
+    mesh = box_mesh(1, 1, 1)
+    faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], 1.0))
+
+    rhs = assemble_traction(
+        mesh,
+        faces,
+        lambda x: np.column_stack((np.zeros(len(x)), np.zeros(len(x)), x[:, 1])),
+    )
+
+    assert np.isclose(rhs[2::3].sum(), 0.5)
+    assert np.allclose(rhs[0::3], 0.0)
+    assert np.allclose(rhs[1::3], 0.0)
+
+
 def test_reactions_balance_applied_traction_load():
     mesh = box_mesh(2, 1, 1, lengths=(2.0, 1.0, 1.0))
     material = IsotropicMaterial(young=100.0, poisson=0.25)

@@ -22,6 +22,15 @@ TET_QUAD_BARY = np.array(
     dtype=float,
 )
 TET_QUAD_WEIGHTS = np.full(4, 0.25, dtype=float)
+TRI_QUAD_BARY = np.array(
+    [
+        [2.0 / 3.0, 1.0 / 6.0, 1.0 / 6.0],
+        [1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0],
+        [1.0 / 6.0, 1.0 / 6.0, 2.0 / 3.0],
+    ],
+    dtype=float,
+)
+TRI_QUAD_WEIGHTS = np.full(3, 1.0 / 3.0, dtype=float)
 
 
 def dofs_for_element(element: np.ndarray) -> np.ndarray:
@@ -75,11 +84,11 @@ def assemble_traction(
     for face in face_array:
         coords = mesh.nodes[face]
         area = 0.5 * np.linalg.norm(np.cross(coords[1] - coords[0], coords[2] - coords[0]))
-        centroid = coords.mean(axis=0, keepdims=True)
-        value = _vector_value(traction, centroid)[0]
-        nodal = area * value / 3.0
-        for node in face:
-            rhs[3 * node : 3 * node + 3] += nodal
+        for bary, weight in zip(TRI_QUAD_BARY, TRI_QUAD_WEIGHTS, strict=True):
+            point = bary @ coords
+            value = _vector_value(traction, point.reshape(1, 3))[0]
+            for local, node in enumerate(face):
+                rhs[3 * node : 3 * node + 3] += weight * area * bary[local] * value
     return rhs
 
 

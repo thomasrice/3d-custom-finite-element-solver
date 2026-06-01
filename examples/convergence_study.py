@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from fem3d.demo_cases import run_convergence_study
+from fem3d.workflows import format_convergence_study, run_convergence_study
 
 
 def main() -> None:
@@ -17,14 +17,7 @@ def main() -> None:
     args = parser.parse_args()
 
     result = run_convergence_study(args.levels, vtk_dir=args.vtk_dir, csv=args.csv)
-    print("h            L2 error      H1 seminorm")
-    for row in result.rows:
-        print(f"{row.h:10.5f}  {row.l2:12.6e}  {row.h1_seminorm:12.6e}")
-    if result.l2_rate is not None and result.h1_rate is not None:
-        print(f"L2 rate: {result.l2_rate:.3f}")
-        print(f"H1 rate: {result.h1_rate:.3f}")
-    if result.csv is not None:
-        print(f"wrote {result.csv}")
+    print(format_convergence_study(result))
 
 
 if __name__ == "__main__":

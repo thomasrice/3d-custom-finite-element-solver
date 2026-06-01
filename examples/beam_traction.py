@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from fem3d.demo_cases import run_beam_case
+from fem3d.workflows import format_beam_result, run_beam_case
 
 
 def main() -> None:
@@ -18,9 +18,7 @@ def main() -> None:
     args = parser.parse_args()
 
     result = run_beam_case(args.output, nx=args.nx, ny=args.ny, nz=args.nz)
-    print(f"wrote {result.output}")
-    print(f"max |u| = {result.max_displacement:.6e}")
-    print(f"support reaction = {result.support_reaction}")
+    print(format_beam_result(result))
 
 
 if __name__ == "__main__":

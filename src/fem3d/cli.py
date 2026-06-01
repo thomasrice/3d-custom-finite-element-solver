@@ -3,7 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from fem3d.demo_cases import run_beam_case, run_convergence_study
+from fem3d.workflows import (
+    format_beam_result,
+    format_convergence_study,
+    run_beam_case,
+    run_convergence_study,
+)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -29,21 +34,12 @@ def main(argv: list[str] | None = None) -> None:
 
 def _run_beam(args: argparse.Namespace) -> None:
     result = run_beam_case(args.output, nx=args.nx, ny=args.ny, nz=args.nz)
-    print(f"wrote {result.output}")
-    print(f"max |u| = {result.max_displacement:.6e}")
-    print(f"support reaction = {result.support_reaction}")
+    print(format_beam_result(result))
 
 
 def _run_convergence(args: argparse.Namespace) -> None:
     result = run_convergence_study(args.levels, vtk_dir=args.vtk_dir, csv=args.csv)
-    print("h            L2 error      H1 seminorm")
-    for row in result.rows:
-        print(f"{row.h:10.5f}  {row.l2:12.6e}  {row.h1_seminorm:12.6e}")
-    if result.l2_rate is not None and result.h1_rate is not None:
-        print(f"L2 rate: {result.l2_rate:.3f}")
-        print(f"H1 rate: {result.h1_rate:.3f}")
-    if result.csv is not None:
-        print(f"wrote {result.csv}")
+    print(format_convergence_study(result))
 
 
 if __name__ == "__main__":

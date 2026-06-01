@@ -20,3 +20,20 @@ Run tests:
 ```bash
 python -m pytest
 ```
+
+Run the manufactured-solution convergence study:
+
+```bash
+python examples/convergence_study.py --levels 2 4 8 --vtk-dir results
+```
+
+The study solves a quadratic analytical displacement field with matching body
+force and exact Dirichlet boundary conditions, then reports L2 and H1-seminorm
+rates. For first-order tetrahedra the expected rates are approximately second
+order in L2 and first order in H1.
+
+Generate a simple loaded beam result for ParaView:
+
+```bash
+python examples/beam_traction.py --output results/beam_traction.vtk
+```

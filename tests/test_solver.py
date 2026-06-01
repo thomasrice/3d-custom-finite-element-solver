@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from fem3d.assembly import assemble_stiffness, assemble_traction
 from fem3d.boundary import DirichletBC
@@ -114,6 +115,20 @@ def test_cg_solver_matches_direct_solver():
     iterative = solve_linear_elasticity(problem, method="cg", rtol=1.0e-12)
 
     assert np.allclose(iterative, direct, atol=1e-10)
+
+
+def test_underconstrained_problem_raises_clear_error():
+    mesh = box_mesh(1, 1, 1)
+    material = IsotropicMaterial(young=10.0, poisson=0.25)
+    one_node = np.array([0])
+    problem = LinearElasticityProblem(
+        mesh=mesh,
+        material=material,
+        dirichlet_bcs=(DirichletBC(one_node, np.zeros(3)),),
+    )
+
+    with pytest.raises(RuntimeError, match="rigid-body modes"):
+        solve_linear_elasticity(problem)
 
 
 def test_stiffness_is_sparse_symmetric_and_nonzero():

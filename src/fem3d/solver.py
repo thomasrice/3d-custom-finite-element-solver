@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import warnings
 
 import numpy as np
-from scipy.sparse.linalg import cg, spsolve
+from scipy.sparse.linalg import MatrixRankWarning, cg, spsolve
 
 from fem3d.assembly import assemble_body_force, assemble_stiffness, assemble_traction
 from fem3d.boundary import DirichletBC
@@ -42,10 +43,19 @@ def solve_linear_elasticity(
 
     solution = np.zeros(3 * problem.mesh.n_nodes, dtype=float)
     solution[fixed_dofs] = fixed_values
+    _check_rigid_body_modes_constrained(problem.mesh, fixed_dofs)
     reduced_rhs = rhs[free_dofs] - stiffness[free_dofs][:, fixed_dofs] @ fixed_values
     reduced_stiffness = stiffness[free_dofs][:, free_dofs]
     if method == "direct":
-        solution[free_dofs] = spsolve(reduced_stiffness, reduced_rhs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("error", category=MatrixRankWarning)
+            try:
+                solution[free_dofs] = spsolve(reduced_stiffness, reduced_rhs)
+            except MatrixRankWarning as exc:
+                raise RuntimeError(
+                    "linear system is singular; check that Dirichlet constraints "
+                    "remove all rigid-body modes"
+                ) from exc
     elif method == "cg":
         reduced_solution, info = cg(
             reduced_stiffness,
@@ -59,6 +69,10 @@ def solve_linear_elasticity(
         solution[free_dofs] = reduced_solution
     else:
         raise ValueError(f"unknown solver method {method!r}")
+    if not np.all(np.isfinite(solution)):
+        raise RuntimeError(
+            "linear solve produced non-finite values; check mesh quality and constraints"
+        )
     return solution.reshape(problem.mesh.n_nodes, 3)
 
 
@@ -94,3 +108,24 @@ def _merge_dirichlet_bcs(mesh: TetMesh, bcs: tuple[DirichletBC, ...]) -> tuple[n
     fixed_dofs = np.array(sorted(prescribed), dtype=np.int64)
     fixed_values = np.array([prescribed[int(dof)] for dof in fixed_dofs], dtype=float)
     return fixed_dofs, fixed_values
+
+
+def _check_rigid_body_modes_constrained(mesh: TetMesh, fixed_dofs: np.ndarray) -> None:
+    modes = np.zeros((3 * mesh.n_nodes, 6), dtype=float)
+    x = mesh.nodes[:, 0]
+    y = mesh.nodes[:, 1]
+    z = mesh.nodes[:, 2]
+    modes[0::3, 0] = 1.0
+    modes[1::3, 1] = 1.0
+    modes[2::3, 2] = 1.0
+    modes[1::3, 3] = -z
+    modes[2::3, 3] = y
+    modes[0::3, 4] = z
+    modes[2::3, 4] = -x
+    modes[0::3, 5] = -y
+    modes[1::3, 5] = x
+    if np.linalg.matrix_rank(modes[fixed_dofs], tol=1.0e-10) < 6:
+        raise RuntimeError(
+            "Dirichlet constraints do not remove all rigid-body modes; "
+            "add enough displacement constraints to prevent free translations and rotations"
+        )

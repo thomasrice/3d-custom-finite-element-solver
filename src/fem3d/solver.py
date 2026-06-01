@@ -5,6 +5,7 @@ from typing import Literal
 import warnings
 
 import numpy as np
+from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import MatrixRankWarning, cg, spsolve
 
 from fem3d.assembly import assemble_body_force, assemble_stiffness, assemble_traction
@@ -50,28 +51,73 @@ class LinearElasticityProblem:
     traction_loads: tuple[TractionLoad, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class LinearSystem:
+    problem: LinearElasticityProblem
+    stiffness: csr_matrix
+    rhs: np.ndarray
+    fixed_dofs: np.ndarray
+    fixed_values: np.ndarray
+    free_dofs: np.ndarray
+
+
+@dataclass(frozen=True)
+class SolveResult:
+    displacement: np.ndarray
+    reactions: np.ndarray
+    residual: np.ndarray
+
+
 def solve_linear_elasticity(
     problem: LinearElasticityProblem,
     solver: SolverOptions | None = None,
 ) -> np.ndarray:
-    options = SolverOptions.direct() if solver is None else solver
+    return solve_linear_elasticity_result(problem, solver).displacement
+
+
+def solve_linear_elasticity_result(
+    problem: LinearElasticityProblem,
+    solver: SolverOptions | None = None,
+) -> SolveResult:
+    return solve_system(assemble_system(problem), solver)
+
+
+def assemble_system(problem: LinearElasticityProblem) -> LinearSystem:
+    problem.mesh.require_valid_quality()
     stiffness = assemble_stiffness(problem.mesh, problem.material)
     rhs = assemble_load_vector(problem)
-
     fixed_dofs, fixed_values = _merge_dirichlet_bcs(problem.mesh, problem.dirichlet_bcs)
     all_dofs = np.arange(3 * problem.mesh.n_nodes, dtype=np.int64)
     free_dofs = np.setdiff1d(all_dofs, fixed_dofs, assume_unique=True)
-
-    solution = np.zeros(3 * problem.mesh.n_nodes, dtype=float)
-    solution[fixed_dofs] = fixed_values
     _check_rigid_body_modes_constrained(problem.mesh, fixed_dofs)
-    reduced_rhs = rhs[free_dofs] - stiffness[free_dofs][:, fixed_dofs] @ fixed_values
-    reduced_stiffness = stiffness[free_dofs][:, free_dofs]
+    return LinearSystem(
+        problem=problem,
+        stiffness=stiffness,
+        rhs=rhs,
+        fixed_dofs=fixed_dofs,
+        fixed_values=fixed_values,
+        free_dofs=free_dofs,
+    )
+
+
+def solve_system(
+    system: LinearSystem,
+    solver: SolverOptions | None = None,
+) -> SolveResult:
+    options = SolverOptions.direct() if solver is None else solver
+    mesh = system.problem.mesh
+    solution = np.zeros(3 * mesh.n_nodes, dtype=float)
+    solution[system.fixed_dofs] = system.fixed_values
+    reduced_rhs = (
+        system.rhs[system.free_dofs]
+        - system.stiffness[system.free_dofs][:, system.fixed_dofs] @ system.fixed_values
+    )
+    reduced_stiffness = system.stiffness[system.free_dofs][:, system.free_dofs]
     if options.method == "direct":
         with warnings.catch_warnings():
             warnings.filterwarnings("error", category=MatrixRankWarning)
             try:
-                solution[free_dofs] = spsolve(reduced_stiffness, reduced_rhs)
+                solution[system.free_dofs] = spsolve(reduced_stiffness, reduced_rhs)
             except MatrixRankWarning as exc:
                 raise RuntimeError(
                     "linear system is singular; check that Dirichlet constraints "
@@ -87,14 +133,19 @@ def solve_linear_elasticity(
         )
         if info != 0:
             raise RuntimeError(f"CG solver did not converge; info={info}")
-        solution[free_dofs] = reduced_solution
+        solution[system.free_dofs] = reduced_solution
     else:
         raise ValueError(f"unknown solver method {options.method!r}")
     if not np.all(np.isfinite(solution)):
         raise RuntimeError(
             "linear solve produced non-finite values; check mesh quality and constraints"
         )
-    return solution.reshape(problem.mesh.n_nodes, 3)
+    residual = system.stiffness @ solution - system.rhs
+    return SolveResult(
+        displacement=solution.reshape(mesh.n_nodes, 3),
+        reactions=residual.reshape(mesh.n_nodes, 3),
+        residual=residual,
+    )
 
 
 def assemble_load_vector(problem: LinearElasticityProblem) -> np.ndarray:
@@ -104,14 +155,18 @@ def assemble_load_vector(problem: LinearElasticityProblem) -> np.ndarray:
     return rhs
 
 
-def reaction_forces(problem: LinearElasticityProblem, displacement: np.ndarray) -> np.ndarray:
+def reaction_forces(
+    problem: LinearElasticityProblem,
+    displacement: np.ndarray,
+    system: LinearSystem | None = None,
+) -> np.ndarray:
     """Return nodal reactions from the residual K u - f."""
 
     u = np.asarray(displacement, dtype=float)
     if u.shape != (problem.mesh.n_nodes, 3):
         raise ValueError("displacement must have shape (n_nodes, 3)")
-    stiffness = assemble_stiffness(problem.mesh, problem.material)
-    residual = stiffness @ u.reshape(3 * problem.mesh.n_nodes) - assemble_load_vector(problem)
+    linear_system = assemble_system(problem) if system is None else system
+    residual = linear_system.stiffness @ u.reshape(3 * problem.mesh.n_nodes) - linear_system.rhs
     return residual.reshape(problem.mesh.n_nodes, 3)
 
 

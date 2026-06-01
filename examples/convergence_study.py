@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from fem3d.workflows import run_convergence_study
+from fem3d.demo_cases import run_convergence_study
 
 
 def main() -> None:

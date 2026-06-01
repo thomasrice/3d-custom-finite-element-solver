@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from fem3d.workflows import run_beam_case
+from fem3d.demo_cases import run_beam_case
 
 
 def main() -> None:

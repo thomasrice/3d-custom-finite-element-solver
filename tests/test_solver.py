@@ -10,8 +10,10 @@ from fem3d.solver import (
     SolverOptions,
     TractionLoad,
     assemble_load_vector,
+    assemble_system,
     reaction_forces,
     solve_linear_elasticity,
+    solve_linear_elasticity_result,
 )
 from fem3d.validation import (
     compute_error_norms,
@@ -93,11 +95,30 @@ def test_reactions_balance_applied_traction_load():
     )
 
     displacement = solve_linear_elasticity(problem)
-    reactions = reaction_forces(problem, displacement)
+    system = assemble_system(problem)
+    reactions = reaction_forces(problem, displacement, system=system)
     applied_load = assemble_load_vector(problem).reshape(mesh.n_nodes, 3).sum(axis=0)
     support_reaction = reactions[fixed].sum(axis=0)
 
     assert np.allclose(support_reaction + applied_load, 0.0, atol=1e-10)
+
+
+def test_solve_result_returns_reactions_from_shared_system():
+    mesh = box_mesh(2, 1, 1, lengths=(2.0, 1.0, 1.0))
+    material = IsotropicMaterial(young=100.0, poisson=0.25)
+    fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
+    loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], 2.0))
+    problem = LinearElasticityProblem(
+        mesh=mesh,
+        material=material,
+        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
+        traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -2.0])),),
+    )
+
+    result = solve_linear_elasticity_result(problem)
+
+    assert np.allclose(result.reactions, reaction_forces(problem, result.displacement))
+    assert np.allclose(result.reactions.reshape(-1), result.residual)
 
 
 def test_cg_solver_matches_direct_solver():

@@ -15,7 +15,7 @@ from fem3d.recovery import (
     stress_tensors,
     von_mises,
 )
-from fem3d.solver import LinearElasticityProblem, TractionLoad, reaction_forces, solve_linear_elasticity
+from fem3d.solver import LinearElasticityProblem, TractionLoad, solve_linear_elasticity, solve_linear_elasticity_result
 from fem3d.validation import (
     ConvergenceRow,
     compute_error_norms,
@@ -61,24 +61,23 @@ def run_beam_case(
         dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
         traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -1.0])),),
     )
-    displacement = solve_linear_elasticity(problem)
-    reactions = reaction_forces(problem, displacement)
-    stress = element_stresses(mesh, displacement, material)
+    result = solve_linear_elasticity_result(problem)
+    stress = element_stresses(mesh, result.displacement, material)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     write_vtk(
         output_path,
         mesh,
-        displacement,
+        result.displacement,
         cell_data=[
-            CellTensor("strain", engineering_strain_tensors(element_strains(mesh, displacement))),
+            CellTensor("strain", engineering_strain_tensors(element_strains(mesh, result.displacement))),
             CellTensor("stress", stress_tensors(stress)),
             CellScalar("von_mises", von_mises(stress)),
         ],
     )
     return BeamResult(
         output=output_path,
-        max_displacement=float(np.linalg.norm(displacement, axis=1).max()),
-        support_reaction=reactions[fixed].sum(axis=0),
+        max_displacement=float(np.linalg.norm(result.displacement, axis=1).max()),
+        support_reaction=result.reactions[fixed].sum(axis=0),
     )
 
 

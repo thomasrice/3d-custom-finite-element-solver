@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from fem3d.workflows import run_beam_case, run_convergence_study
+from fem3d.demo_cases import run_beam_case, run_convergence_study
 
 
 def main(argv: list[str] | None = None) -> None:

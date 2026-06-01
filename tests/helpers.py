@@ -19,6 +19,12 @@ def boundary_nodes(mesh: TetMesh) -> np.ndarray:
     )
 
 
+def rigid_displacement(points: np.ndarray) -> np.ndarray:
+    translation = np.array([0.03, -0.02, 0.01])
+    omega = np.array([0.01, -0.02, 0.015])
+    return translation + np.cross(np.tile(omega, (len(points), 1)), points)
+
+
 def clamped_beam_problem(
     traction: np.ndarray,
     nx: int = 4,

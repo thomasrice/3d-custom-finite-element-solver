@@ -62,3 +62,15 @@ def test_rigid_body_motion_produces_no_strain_stress_or_reactions():
     assert np.allclose(strains, 0.0, atol=1e-13)
     assert np.allclose(stresses, 0.0, atol=1e-12)
     assert np.allclose(result.reactions, 0.0, atol=1e-12)
+
+
+def test_strain_energy_matches_external_work_for_solved_system():
+    problem, _ = clamped_beam_problem(np.array([0.0, 0.0, -1.0]))
+
+    system = assemble_system(problem)
+    result = solve_linear_elasticity_result(problem)
+    displacement = result.displacement.reshape(-1)
+    strain_energy = 0.5 * displacement @ (system.stiffness @ displacement)
+    external_work = 0.5 * system.rhs @ displacement
+
+    assert np.isclose(strain_energy, external_work, rtol=1e-11, atol=1e-13)

@@ -98,6 +98,24 @@ def test_reactions_balance_applied_traction_load():
     assert np.allclose(support_reaction + applied_load, 0.0, atol=1e-10)
 
 
+def test_cg_solver_matches_direct_solver():
+    mesh = box_mesh(2, 2, 2)
+    material = IsotropicMaterial(young=10.0, poisson=0.25)
+    boundary_nodes = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
+    loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], 1.0))
+    problem = LinearElasticityProblem(
+        mesh=mesh,
+        material=material,
+        dirichlet_bcs=(DirichletBC(boundary_nodes, np.zeros(3)),),
+        traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -1.0])),),
+    )
+
+    direct = solve_linear_elasticity(problem)
+    iterative = solve_linear_elasticity(problem, method="cg", rtol=1.0e-12)
+
+    assert np.allclose(iterative, direct, atol=1e-10)
+
+
 def test_stiffness_is_sparse_symmetric_and_nonzero():
     mesh = box_mesh(2, 2, 1)
     stiffness = assemble_stiffness(mesh, IsotropicMaterial(young=1.0, poisson=0.3))

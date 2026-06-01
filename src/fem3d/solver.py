@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import cg, spsolve
 
 from fem3d.assembly import assemble_body_force, assemble_stiffness, assemble_traction
 from fem3d.boundary import DirichletBC
@@ -26,7 +26,13 @@ class LinearElasticityProblem:
     traction_loads: tuple[TractionLoad, ...] = field(default_factory=tuple)
 
 
-def solve_linear_elasticity(problem: LinearElasticityProblem) -> np.ndarray:
+def solve_linear_elasticity(
+    problem: LinearElasticityProblem,
+    method: str = "direct",
+    rtol: float = 1.0e-10,
+    atol: float = 0.0,
+    maxiter: int | None = None,
+) -> np.ndarray:
     stiffness = assemble_stiffness(problem.mesh, problem.material)
     rhs = assemble_load_vector(problem)
 
@@ -37,7 +43,22 @@ def solve_linear_elasticity(problem: LinearElasticityProblem) -> np.ndarray:
     solution = np.zeros(3 * problem.mesh.n_nodes, dtype=float)
     solution[fixed_dofs] = fixed_values
     reduced_rhs = rhs[free_dofs] - stiffness[free_dofs][:, fixed_dofs] @ fixed_values
-    solution[free_dofs] = spsolve(stiffness[free_dofs][:, free_dofs], reduced_rhs)
+    reduced_stiffness = stiffness[free_dofs][:, free_dofs]
+    if method == "direct":
+        solution[free_dofs] = spsolve(reduced_stiffness, reduced_rhs)
+    elif method == "cg":
+        reduced_solution, info = cg(
+            reduced_stiffness,
+            reduced_rhs,
+            rtol=rtol,
+            atol=atol,
+            maxiter=maxiter,
+        )
+        if info != 0:
+            raise RuntimeError(f"CG solver did not converge; info={info}")
+        solution[free_dofs] = reduced_solution
+    else:
+        raise ValueError(f"unknown solver method {method!r}")
     return solution.reshape(problem.mesh.n_nodes, 3)
 
 

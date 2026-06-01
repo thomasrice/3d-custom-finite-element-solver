@@ -41,6 +41,7 @@ def dofs_for_element(element: np.ndarray) -> np.ndarray:
 
 
 def assemble_stiffness(mesh: TetMesh, material: IsotropicMaterial) -> csr_matrix:
+    mesh.require_valid_quality()
     elasticity = material.elasticity_matrix()
     rows: list[int] = []
     cols: list[int] = []
@@ -58,6 +59,7 @@ def assemble_stiffness(mesh: TetMesh, material: IsotropicMaterial) -> csr_matrix
 
 
 def assemble_body_force(mesh: TetMesh, body_force: VectorFunction | np.ndarray | None) -> np.ndarray:
+    mesh.require_valid_quality()
     rhs = np.zeros(3 * mesh.n_nodes, dtype=float)
     if body_force is None:
         return rhs

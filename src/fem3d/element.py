@@ -9,9 +9,9 @@ def tet_geometry(coords: np.ndarray) -> tuple[float, np.ndarray]:
     matrix = np.ones((4, 4), dtype=float)
     matrix[:, 1:] = coords
     det = np.linalg.det(matrix)
-    volume = abs(det) / 6.0
+    volume = det / 6.0
     if volume <= 0.0:
-        raise ValueError("degenerate tetrahedron")
+        raise ValueError("inverted or degenerate tetrahedron")
     inv = np.linalg.inv(matrix)
     gradients = inv[1:, :].T
     return volume, gradients

@@ -3,6 +3,8 @@ import numpy as np
 import pytest
 
 from fem3d.mesh import TetMesh, box_mesh
+from fem3d.assembly import assemble_stiffness
+from fem3d.material import IsotropicMaterial
 
 
 def test_box_mesh_counts_and_boundary_faces():
@@ -45,3 +47,5 @@ def test_mesh_quality_detects_inverted_tet():
     assert quality.inverted_elements.tolist() == [0]
     with pytest.raises(ValueError, match="inverted"):
         mesh.require_valid_quality()
+    with pytest.raises(ValueError, match="inverted"):
+        assemble_stiffness(mesh, IsotropicMaterial(young=1.0, poisson=0.25))

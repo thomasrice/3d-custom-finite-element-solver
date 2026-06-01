@@ -1,5 +1,9 @@
 # Custom 3D Finite Element Solver
 
+> **Note:** This project is just a demo of LLM-driven coding — it was written almost
+> entirely by an AI coding agent to see how far that approach can get on a non-trivial
+> numerical problem. It is not intended for production engineering use.
+
 This repository contains a from-scratch linear-elasticity finite element solver for
 3D tetrahedral meshes. It uses NumPy/SciPy for arrays, sparse matrices, and sparse
 linear solves; no finite element libraries are used.
@@ -44,3 +48,7 @@ After installing the package, the same workflows are available as CLI commands:
 fem3d convergence --levels 2 4 8 --csv results/convergence.csv
 fem3d beam --output results/beam_traction.vtk
 ```
+
+## License
+
+Released under the [MIT License](LICENSE).

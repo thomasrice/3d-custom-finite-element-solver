@@ -12,7 +12,7 @@ from fem3d.boundary import DirichletBC
 from fem3d.material import IsotropicMaterial
 from fem3d.mesh import box_mesh
 from fem3d.recovery import element_strains, element_stresses, von_mises
-from fem3d.solver import LinearElasticityProblem, TractionLoad, solve_linear_elasticity
+from fem3d.solver import LinearElasticityProblem, TractionLoad, reaction_forces, solve_linear_elasticity
 from fem3d.vtk import write_vtk
 
 
@@ -36,6 +36,7 @@ def main() -> None:
         traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -1.0])),),
     )
     displacement = solve_linear_elasticity(problem)
+    reactions = reaction_forces(problem, displacement)
     stress = element_stresses(mesh, displacement, material)
     write_vtk(
         args.output,
@@ -49,6 +50,7 @@ def main() -> None:
     )
     print(f"wrote {args.output}")
     print(f"max |u| = {np.linalg.norm(displacement, axis=1).max():.6e}")
+    print(f"support reaction = {reactions[fixed].sum(axis=0)}")
 
 
 if __name__ == "__main__":

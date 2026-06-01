@@ -28,9 +28,7 @@ class LinearElasticityProblem:
 
 def solve_linear_elasticity(problem: LinearElasticityProblem) -> np.ndarray:
     stiffness = assemble_stiffness(problem.mesh, problem.material)
-    rhs = assemble_body_force(problem.mesh, problem.body_force)
-    for load in problem.traction_loads:
-        rhs += assemble_traction(problem.mesh, load.faces, load.traction)
+    rhs = assemble_load_vector(problem)
 
     fixed_dofs, fixed_values = _merge_dirichlet_bcs(problem.mesh, problem.dirichlet_bcs)
     all_dofs = np.arange(3 * problem.mesh.n_nodes, dtype=np.int64)
@@ -41,6 +39,24 @@ def solve_linear_elasticity(problem: LinearElasticityProblem) -> np.ndarray:
     reduced_rhs = rhs[free_dofs] - stiffness[free_dofs][:, fixed_dofs] @ fixed_values
     solution[free_dofs] = spsolve(stiffness[free_dofs][:, free_dofs], reduced_rhs)
     return solution.reshape(problem.mesh.n_nodes, 3)
+
+
+def assemble_load_vector(problem: LinearElasticityProblem) -> np.ndarray:
+    rhs = assemble_body_force(problem.mesh, problem.body_force)
+    for load in problem.traction_loads:
+        rhs += assemble_traction(problem.mesh, load.faces, load.traction)
+    return rhs
+
+
+def reaction_forces(problem: LinearElasticityProblem, displacement: np.ndarray) -> np.ndarray:
+    """Return nodal reactions from the residual K u - f."""
+
+    u = np.asarray(displacement, dtype=float)
+    if u.shape != (problem.mesh.n_nodes, 3):
+        raise ValueError("displacement must have shape (n_nodes, 3)")
+    stiffness = assemble_stiffness(problem.mesh, problem.material)
+    residual = stiffness @ u.reshape(3 * problem.mesh.n_nodes) - assemble_load_vector(problem)
+    return residual.reshape(problem.mesh.n_nodes, 3)
 
 
 def _merge_dirichlet_bcs(mesh: TetMesh, bcs: tuple[DirichletBC, ...]) -> tuple[np.ndarray, np.ndarray]:

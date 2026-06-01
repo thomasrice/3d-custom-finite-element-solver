@@ -46,3 +46,34 @@ def test_voigt_conversions_use_correct_shear_conventions():
 
     assert np.allclose(strain_tensor, [[1.0, 0.2, 0.4], [0.2, 2.0, 0.3], [0.4, 0.3, 3.0]])
     assert np.allclose(stress_tensor, [[1.0, 0.4, 0.8], [0.4, 2.0, 0.6], [0.8, 0.6, 3.0]])
+
+
+def test_von_mises_is_zero_for_hydrostatic_stress():
+    hydrostatic = np.array([5.0, 5.0, 5.0, 0.0, 0.0, 0.0])
+
+    assert np.allclose(von_mises(hydrostatic), 0.0)
+
+
+def test_von_mises_is_invariant_under_stress_tensor_rotation():
+    stress_tensor = np.array(
+        [
+            [4.0, 1.2, -0.7],
+            [1.2, -2.0, 0.5],
+            [-0.7, 0.5, 1.0],
+        ]
+    )
+    angle = 0.37
+    rotation = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 0.0],
+            [np.sin(angle), np.cos(angle), 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    rotated = rotation @ stress_tensor @ rotation.T
+    stress_voigt = np.array(
+        [stress_tensor[0, 0], stress_tensor[1, 1], stress_tensor[2, 2], stress_tensor[0, 1], stress_tensor[1, 2], stress_tensor[0, 2]]
+    )
+    rotated_voigt = np.array([rotated[0, 0], rotated[1, 1], rotated[2, 2], rotated[0, 1], rotated[1, 2], rotated[0, 2]])
+
+    assert np.allclose(von_mises(stress_voigt), von_mises(rotated_voigt))

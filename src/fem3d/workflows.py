@@ -48,6 +48,15 @@ class ConvergenceStudy:
     csv: Path | None = None
 
 
+@dataclass(frozen=True)
+class UniaxialTensionResult:
+    output: Path
+    axial_strain: float
+    lateral_strain: float
+    axial_stress: float
+    poisson: float
+
+
 def run_beam_case(
     output: str | Path,
     nx: int = 8,
@@ -78,6 +87,54 @@ def run_beam_case(
         output=output_path,
         max_displacement=float(np.linalg.norm(result.displacement, axis=1).max()),
         support_reaction=result.reactions[fixed].sum(axis=0),
+    )
+
+
+def run_uniaxial_tension_demo(
+    output: str | Path = Path("results/uniaxial_tension.vtk"),
+    nx: int = 6,
+    ny: int = 3,
+    nz: int = 3,
+) -> UniaxialTensionResult:
+    output_path = Path(output)
+    length = 2.0
+    axial_stress = 3.0
+    material = IsotropicMaterial(young=120.0, poisson=0.25)
+    axial_strain = axial_stress / material.young
+    lateral_strain = -material.poisson * axial_strain
+    mesh = box_mesh(nx, ny, nz, lengths=(length, 1.0, 1.0))
+    fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
+    loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], length))
+
+    def exact_displacement(points: np.ndarray) -> np.ndarray:
+        return np.column_stack(
+            (
+                axial_strain * points[:, 0],
+                lateral_strain * points[:, 1],
+                lateral_strain * points[:, 2],
+            )
+        )
+
+    problem = LinearElasticityProblem(
+        mesh=mesh,
+        material=material,
+        dirichlet_bcs=(DirichletBC(fixed, exact_displacement),),
+        traction_loads=(TractionLoad(loaded_faces, np.array([axial_stress, 0.0, 0.0])),),
+    )
+    result = solve_linear_elasticity_result(problem)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_vtk(
+        output_path,
+        mesh,
+        result.displacement,
+        cell_data=_elastic_cell_data(mesh, result.displacement, material),
+    )
+    return UniaxialTensionResult(
+        output=output_path,
+        axial_strain=axial_strain,
+        lateral_strain=lateral_strain,
+        axial_stress=axial_stress,
+        poisson=material.poisson,
     )
 
 
@@ -127,6 +184,18 @@ def format_beam_result(result: BeamResult) -> str:
             f"wrote {result.output}",
             f"max |u| = {result.max_displacement:.6e}",
             f"support reaction = {result.support_reaction}",
+        )
+    )
+
+
+def format_uniaxial_tension_result(result: UniaxialTensionResult) -> str:
+    return "\n".join(
+        (
+            f"wrote {result.output}",
+            f"axial stress = {result.axial_stress:.6e}",
+            f"axial strain = {result.axial_strain:.6e}",
+            f"lateral strain = {result.lateral_strain:.6e}",
+            f"poisson ratio = {result.poisson:.6e}",
         )
     )
 

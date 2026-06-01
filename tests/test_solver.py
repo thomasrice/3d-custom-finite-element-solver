@@ -21,7 +21,7 @@ from fem3d.validation import (
     quadratic_gradient,
 )
 
-from helpers import boundary_nodes
+from helpers import boundary_nodes, clamped_beam_problem
 
 
 def affine_displacement(points):
@@ -74,16 +74,8 @@ def test_traction_assembly_integrates_linear_face_load():
 
 
 def test_reactions_balance_applied_traction_load():
-    mesh = box_mesh(2, 1, 1, lengths=(2.0, 1.0, 1.0))
-    material = IsotropicMaterial(young=100.0, poisson=0.25)
-    fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
-    loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], 2.0))
-    problem = LinearElasticityProblem(
-        mesh=mesh,
-        material=material,
-        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
-        traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -2.0])),),
-    )
+    problem, fixed = clamped_beam_problem(np.array([0.0, 0.0, -2.0]), nx=2, ny=1, nz=1)
+    mesh = problem.mesh
 
     displacement = solve_linear_elasticity(problem)
     system = assemble_system(problem)
@@ -95,16 +87,7 @@ def test_reactions_balance_applied_traction_load():
 
 
 def test_solve_result_returns_reactions_from_shared_system():
-    mesh = box_mesh(2, 1, 1, lengths=(2.0, 1.0, 1.0))
-    material = IsotropicMaterial(young=100.0, poisson=0.25)
-    fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
-    loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], 2.0))
-    problem = LinearElasticityProblem(
-        mesh=mesh,
-        material=material,
-        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
-        traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -2.0])),),
-    )
+    problem, _ = clamped_beam_problem(np.array([0.0, 0.0, -2.0]), nx=2, ny=1, nz=1)
 
     result = solve_linear_elasticity_result(problem)
 
@@ -116,12 +99,12 @@ def test_solve_result_returns_reactions_from_shared_system():
 def test_cg_solver_matches_direct_solver():
     mesh = box_mesh(2, 2, 2)
     material = IsotropicMaterial(young=10.0, poisson=0.25)
-    boundary_nodes = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
+    fixed_nodes = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
     loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], 1.0))
     problem = LinearElasticityProblem(
         mesh=mesh,
         material=material,
-        dirichlet_bcs=(DirichletBC(boundary_nodes, np.zeros(3)),),
+        dirichlet_bcs=(DirichletBC(fixed_nodes, np.zeros(3)),),
         traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -1.0])),),
     )
 

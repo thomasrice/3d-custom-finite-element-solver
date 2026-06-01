@@ -44,3 +44,37 @@ def test_uniaxial_tension_recovers_hand_calculated_stress_and_strain():
     assert np.allclose(strains[:, 2], lateral_strain, atol=1e-12)
     assert np.allclose(strains[:, 3:], 0.0, atol=1e-12)
     assert np.allclose(stresses, np.array([sigma, 0.0, 0.0, 0.0, 0.0, 0.0]), atol=1e-11)
+
+
+def test_simple_shear_recovers_hand_calculated_shear_stress():
+    gamma = 0.04
+    young = 90.0
+    poisson = 0.2
+    material = IsotropicMaterial(young=young, poisson=poisson)
+    mesh = box_mesh(2, 2, 2)
+    fixed = mesh.boundary_nodes(
+        lambda x: (
+            np.isclose(x[:, 0], 0.0)
+            | np.isclose(x[:, 0], 1.0)
+            | np.isclose(x[:, 1], 0.0)
+            | np.isclose(x[:, 1], 1.0)
+            | np.isclose(x[:, 2], 0.0)
+            | np.isclose(x[:, 2], 1.0)
+        )
+    )
+
+    def exact_shear_displacement(points):
+        return np.column_stack((gamma * points[:, 1], np.zeros((len(points), 2))))
+
+    problem = LinearElasticityProblem(
+        mesh=mesh,
+        material=material,
+        dirichlet_bcs=(DirichletBC(fixed, exact_shear_displacement),),
+    )
+
+    result = solve_linear_elasticity_result(problem)
+    strains = element_strains(mesh, result.displacement)
+    stresses = element_stresses(mesh, result.displacement, material)
+
+    assert np.allclose(strains, np.array([0.0, 0.0, 0.0, gamma, 0.0, 0.0]), atol=1e-12)
+    assert np.allclose(stresses, np.array([0.0, 0.0, 0.0, material.shear_mu * gamma, 0.0, 0.0]), atol=1e-12)

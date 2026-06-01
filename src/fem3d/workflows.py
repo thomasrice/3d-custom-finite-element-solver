@@ -57,6 +57,24 @@ class UniaxialTensionResult:
     poisson: float
 
 
+@dataclass(frozen=True)
+class BendingRefinementRow:
+    level: int
+    nx: int
+    ny: int
+    nz: int
+    dofs: int
+    tip_deflection: float
+    euler_bernoulli_tip_deflection: float
+    vtk: Path
+
+
+@dataclass(frozen=True)
+class BendingRefinementStudy:
+    rows: list[BendingRefinementRow]
+    csv: Path
+
+
 def run_beam_case(
     output: str | Path,
     nx: int = 8,
@@ -88,6 +106,63 @@ def run_beam_case(
         max_displacement=float(np.linalg.norm(result.displacement, axis=1).max()),
         support_reaction=result.reactions[fixed].sum(axis=0),
     )
+
+
+def run_bending_refinement_demo(
+    levels: list[int],
+    output_dir: str | Path = Path("results/bending_refinement"),
+    csv: str | Path = Path("results/bending_refinement.csv"),
+) -> BendingRefinementStudy:
+    output_path = Path(output_dir)
+    csv_path = Path(csv)
+    output_path.mkdir(parents=True, exist_ok=True)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    length = 4.0
+    width = 1.0
+    height = 1.0
+    end_traction = -1.0
+    material = IsotropicMaterial(young=1000.0, poisson=0.3)
+    force = abs(end_traction) * width * height
+    second_moment = width * height**3 / 12.0
+    true_tip = -force * length**3 / (3.0 * material.young * second_moment)
+    rows: list[BendingRefinementRow] = []
+    for level in levels:
+        nx = 4 * level
+        ny = level
+        nz = level
+        mesh = box_mesh(nx, ny, nz, lengths=(length, width, height))
+        fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
+        loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], length))
+        problem = LinearElasticityProblem(
+            mesh=mesh,
+            material=material,
+            dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
+            traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, end_traction])),),
+        )
+        result = solve_linear_elasticity_result(problem)
+        tip_nodes = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], length))
+        tip_deflection = float(result.displacement[tip_nodes, 2].mean())
+        vtk = output_path / f"bending_level_{level}.vtk"
+        write_vtk(
+            vtk,
+            mesh,
+            result.displacement,
+            cell_data=_elastic_cell_data(mesh, result.displacement, material),
+        )
+        rows.append(
+            BendingRefinementRow(
+                level=level,
+                nx=nx,
+                ny=ny,
+                nz=nz,
+                dofs=3 * mesh.n_nodes,
+                tip_deflection=tip_deflection,
+                euler_bernoulli_tip_deflection=true_tip,
+                vtk=vtk,
+            )
+        )
+    _write_bending_refinement_csv(csv_path, rows)
+    return BendingRefinementStudy(rows=rows, csv=csv_path)
 
 
 def run_uniaxial_tension_demo(
@@ -188,6 +263,20 @@ def format_beam_result(result: BeamResult) -> str:
     )
 
 
+def format_bending_refinement_study(result: BendingRefinementStudy) -> str:
+    lines = ["level  mesh          dofs    tip dz       EB tip dz    ratio"]
+    for row in result.rows:
+        ratio = row.tip_deflection / row.euler_bernoulli_tip_deflection
+        lines.append(
+            f"{row.level:5d}  {row.nx}x{row.ny}x{row.nz:<5d}  {row.dofs:5d}  "
+            f"{row.tip_deflection: .6e}  {row.euler_bernoulli_tip_deflection: .6e}  "
+            f"{ratio: .3f}"
+        )
+        lines.append(f"wrote {row.vtk}")
+    lines.append(f"wrote {result.csv}")
+    return "\n".join(lines)
+
+
 def format_uniaxial_tension_result(result: UniaxialTensionResult) -> str:
     return "\n".join(
         (
@@ -210,6 +299,18 @@ def format_convergence_study(result: ConvergenceStudy) -> str:
     if result.csv is not None:
         lines.append(f"wrote {result.csv}")
     return "\n".join(lines)
+
+
+def _write_bending_refinement_csv(path: Path, rows: list[BendingRefinementRow]) -> None:
+    with path.open("w", encoding="utf-8") as fh:
+        fh.write("level,nx,ny,nz,dofs,tip_deflection,euler_bernoulli_tip_deflection,ratio\n")
+        for row in rows:
+            ratio = row.tip_deflection / row.euler_bernoulli_tip_deflection
+            fh.write(
+                f"{row.level},{row.nx},{row.ny},{row.nz},{row.dofs},"
+                f"{row.tip_deflection:.16e},{row.euler_bernoulli_tip_deflection:.16e},"
+                f"{ratio:.16e}\n"
+            )
 
 
 def _box_boundary_nodes(mesh) -> np.ndarray:

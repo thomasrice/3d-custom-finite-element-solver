@@ -24,7 +24,7 @@ python -m pytest
 Run the manufactured-solution convergence study:
 
 ```bash
-python examples/convergence_study.py --levels 2 4 8 --vtk-dir results
+python examples/convergence_study.py --levels 2 4 8 --vtk-dir results --csv results/convergence.csv
 ```
 
 The study solves a quadratic analytical displacement field with matching body

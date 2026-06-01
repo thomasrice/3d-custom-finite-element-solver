@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -11,6 +12,14 @@ from fem3d.mesh import TetMesh
 
 @dataclass(frozen=True)
 class ErrorNorms:
+    l2: float
+    h1_seminorm: float
+
+
+@dataclass(frozen=True)
+class ConvergenceRow:
+    h: float
+    dofs: int
     l2: float
     h1_seminorm: float
 
@@ -85,3 +94,19 @@ def compute_error_norms(
             grad_error = element_gradient - ge
             h1_sq += weight * volume * float(np.sum(grad_error * grad_error))
     return ErrorNorms(l2=float(np.sqrt(l2_sq)), h1_seminorm=float(np.sqrt(h1_sq)))
+
+
+def convergence_rates(rows: list[ConvergenceRow]) -> tuple[float, float]:
+    if len(rows) < 2:
+        raise ValueError("at least two convergence rows are required")
+    hs = np.log([row.h for row in rows])
+    l2_rate = np.polyfit(hs, np.log([row.l2 for row in rows]), 1)[0]
+    h1_rate = np.polyfit(hs, np.log([row.h1_seminorm for row in rows]), 1)[0]
+    return float(l2_rate), float(h1_rate)
+
+
+def write_convergence_csv(path: str | Path, rows: list[ConvergenceRow]) -> None:
+    with Path(path).open("w", encoding="utf-8") as fh:
+        fh.write("h,dofs,l2,h1_seminorm\n")
+        for row in rows:
+            fh.write(f"{row.h:.16g},{row.dofs},{row.l2:.16e},{row.h1_seminorm:.16e}\n")

@@ -44,19 +44,23 @@ def render_deformed_surface_png(
     plt.close(fig)
 
 
-def render_convergence_png(path: str | Path, h: np.ndarray, l2: np.ndarray, h1: np.ndarray) -> None:
+def render_convergence_png(
+    path: str | Path,
+    h: np.ndarray,
+    l2: np.ndarray,
+    h1: np.ndarray,
+    l2_rate: float | None,
+    h1_rate: float | None,
+) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     output = Path(path)
-    l2_rate = _fit_log_slope(h, l2)
-    h1_rate = _fit_log_slope(h, h1)
-
     fig, ax = plt.subplots(figsize=(7, 5), constrained_layout=True)
-    ax.loglog(h, l2, "o-", label=f"L2 slope {l2_rate:.2f}")
-    ax.loglog(h, h1, "s-", label=f"H1 seminorm slope {h1_rate:.2f}")
+    ax.loglog(h, l2, "o-", label=_slope_label("L2", l2_rate))
+    ax.loglog(h, h1, "s-", label=_slope_label("H1 seminorm", h1_rate))
     ax.invert_xaxis()
     ax.grid(True, which="both", linestyle=":", linewidth=0.7)
     ax.set_xlabel("mesh size h")
@@ -66,10 +70,8 @@ def render_convergence_png(path: str | Path, h: np.ndarray, l2: np.ndarray, h1: 
     plt.close(fig)
 
 
-def _fit_log_slope(x: np.ndarray, y: np.ndarray) -> float:
-    if len(x) < 2:
-        return float("nan")
-    return float(np.polyfit(np.log(x), np.log(y), 1)[0])
+def _slope_label(name: str, rate: float | None) -> str:
+    return name if rate is None else f"{name} slope {rate:.2f}"
 
 
 def _set_equal_3d_axes(ax, points: np.ndarray) -> None:

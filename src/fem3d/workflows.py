@@ -117,7 +117,7 @@ def run_beam_case(
     nz: int = 2,
 ) -> BeamResult:
     output_path = Path(output)
-    beam = _solve_clamped_beam(nx, ny, nz, end_traction=-1.0)
+    beam = _solve_end_loaded_beam(nx, ny, nz, end_traction=-1.0)
     _write_elastic_vtk(output_path, beam.mesh, beam.result.displacement, beam.material)
     return BeamResult(
         output=output_path,
@@ -136,7 +136,7 @@ def run_deformed_mesh_render_demo(
 ) -> DeformedMeshRenderResult:
     png_path = Path(png)
     vtk_path = Path(vtk)
-    beam = _solve_clamped_beam(nx, ny, nz, end_traction=-1.0)
+    beam = _solve_end_loaded_beam(nx, ny, nz, end_traction=-1.0)
     stress = element_stresses(beam.mesh, beam.result.displacement, beam.material)
     equivalent_stress = von_mises(stress)
     _write_elastic_vtk(vtk_path, beam.mesh, beam.result.displacement, beam.material)
@@ -178,7 +178,7 @@ def run_bending_refinement_demo(
         nx = 4 * level
         ny = level
         nz = level
-        beam = _solve_clamped_beam(
+        beam = _solve_end_loaded_beam(
             nx,
             ny,
             nz,
@@ -216,7 +216,7 @@ def run_self_weight_beam_demo(
 ) -> SelfWeightBeamResult:
     output_path = Path(output)
     body_force = np.array([0.0, 0.0, -0.4])
-    beam = _solve_clamped_beam(nx, ny, nz, body_force=body_force)
+    beam = _solve_self_weight_beam(nx, ny, nz, body_force=body_force)
     _write_elastic_vtk(output_path, beam.mesh, beam.result.displacement, beam.material)
     return SelfWeightBeamResult(
         output=output_path,
@@ -328,6 +328,8 @@ def run_convergence_plot_demo(
         np.array([row.h for row in study.rows], dtype=float),
         np.array([row.l2 for row in study.rows], dtype=float),
         np.array([row.h1_seminorm for row in study.rows], dtype=float),
+        study.l2_rate,
+        study.h1_rate,
     )
     return ConvergencePlotResult(study=study, png=png_path)
 
@@ -407,36 +409,63 @@ def format_convergence_plot_result(result: ConvergencePlotResult) -> str:
     return "\n".join(lines)
 
 
-def _solve_clamped_beam(
+def _solve_end_loaded_beam(
     nx: int,
     ny: int,
     nz: int,
     length: float = 4.0,
     width: float = 1.0,
     height: float = 1.0,
-    material: IsotropicMaterial | None = None,
-    end_traction: float | None = None,
-    body_force: np.ndarray | None = None,
+    material: IsotropicMaterial = IsotropicMaterial(young=1000.0, poisson=0.3),
+    end_traction: float = -1.0,
 ) -> BeamSolve:
     mesh = box_mesh(nx, ny, nz, lengths=(length, width, height))
     fixed = _left_face_nodes(mesh)
-    traction_loads = ()
-    if end_traction is not None:
-        loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], length))
-        traction_loads = (TractionLoad(loaded_faces, np.array([0.0, 0.0, end_traction])),)
-    beam_material = IsotropicMaterial(young=1000.0, poisson=0.3) if material is None else material
+    loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], length))
     problem = LinearElasticityProblem(
         mesh=mesh,
-        material=beam_material,
+        material=material,
+        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
+        traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, end_traction])),),
+    )
+    return _beam_solve(mesh, material, problem, fixed, length, width, height)
+
+
+def _solve_self_weight_beam(
+    nx: int,
+    ny: int,
+    nz: int,
+    body_force: np.ndarray,
+    length: float = 4.0,
+    width: float = 1.0,
+    height: float = 1.0,
+    material: IsotropicMaterial = IsotropicMaterial(young=1000.0, poisson=0.3),
+) -> BeamSolve:
+    mesh = box_mesh(nx, ny, nz, lengths=(length, width, height))
+    fixed = _left_face_nodes(mesh)
+    problem = LinearElasticityProblem(
+        mesh=mesh,
+        material=material,
         body_force=body_force,
         dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
-        traction_loads=traction_loads,
     )
+    return _beam_solve(mesh, material, problem, fixed, length, width, height)
+
+
+def _beam_solve(
+    mesh: TetMesh,
+    material: IsotropicMaterial,
+    problem: LinearElasticityProblem,
+    fixed_nodes: np.ndarray,
+    length: float,
+    width: float,
+    height: float,
+) -> BeamSolve:
     return BeamSolve(
         mesh=mesh,
-        material=beam_material,
+        material=material,
         result=solve_linear_elasticity_result(problem),
-        fixed_nodes=fixed,
+        fixed_nodes=fixed_nodes,
         length=length,
         width=width,
         height=height,

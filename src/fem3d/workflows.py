@@ -83,6 +83,14 @@ class SelfWeightBeamResult:
     total_body_force: np.ndarray
 
 
+@dataclass(frozen=True)
+class DeformedMeshRenderResult:
+    png: Path
+    vtk: Path
+    max_von_mises: float
+    displacement_scale: float
+
+
 def run_beam_case(
     output: str | Path,
     nx: int = 8,
@@ -113,6 +121,53 @@ def run_beam_case(
         output=output_path,
         max_displacement=float(np.linalg.norm(result.displacement, axis=1).max()),
         support_reaction=result.reactions[fixed].sum(axis=0),
+    )
+
+
+def run_deformed_mesh_render_demo(
+    png: str | Path = Path("results/deformed_von_mises.png"),
+    vtk: str | Path = Path("results/deformed_von_mises.vtk"),
+    nx: int = 8,
+    ny: int = 2,
+    nz: int = 2,
+    displacement_scale: float = 4.0,
+) -> DeformedMeshRenderResult:
+    png_path = Path(png)
+    vtk_path = Path(vtk)
+    length = 4.0
+    mesh = box_mesh(nx, ny, nz, lengths=(length, 1.0, 1.0))
+    fixed = mesh.boundary_nodes(lambda x: np.isclose(x[:, 0], 0.0))
+    loaded_faces = mesh.faces_on(lambda x: np.isclose(x[:, 0], length))
+    material = IsotropicMaterial(young=1000.0, poisson=0.3)
+    problem = LinearElasticityProblem(
+        mesh=mesh,
+        material=material,
+        dirichlet_bcs=(DirichletBC(fixed, np.zeros(3)),),
+        traction_loads=(TractionLoad(loaded_faces, np.array([0.0, 0.0, -1.0])),),
+    )
+    result = solve_linear_elasticity_result(problem)
+    stress = element_stresses(mesh, result.displacement, material)
+    equivalent_stress = von_mises(stress)
+    vtk_path.parent.mkdir(parents=True, exist_ok=True)
+    write_vtk(
+        vtk_path,
+        mesh,
+        result.displacement,
+        cell_data=_elastic_cell_data(mesh, result.displacement, material),
+    )
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+    _render_deformed_surface_png(
+        png_path,
+        mesh,
+        result.displacement,
+        equivalent_stress,
+        displacement_scale,
+    )
+    return DeformedMeshRenderResult(
+        png=png_path,
+        vtk=vtk_path,
+        max_von_mises=float(equivalent_stress.max()),
+        displacement_scale=displacement_scale,
     )
 
 
@@ -307,6 +362,17 @@ def format_beam_result(result: BeamResult) -> str:
     )
 
 
+def format_deformed_mesh_render_result(result: DeformedMeshRenderResult) -> str:
+    return "\n".join(
+        (
+            f"wrote {result.png}",
+            f"wrote {result.vtk}",
+            f"max von Mises = {result.max_von_mises:.6e}",
+            f"displacement scale = {result.displacement_scale:.6e}",
+        )
+    )
+
+
 def format_bending_refinement_study(result: BendingRefinementStudy) -> str:
     lines = ["level  mesh          dofs    tip dz       EB tip dz    ratio"]
     for row in result.rows:
@@ -366,6 +432,73 @@ def _write_bending_refinement_csv(path: Path, rows: list[BendingRefinementRow]) 
                 f"{row.tip_deflection:.16e},{row.euler_bernoulli_tip_deflection:.16e},"
                 f"{ratio:.16e}\n"
             )
+
+
+def _render_deformed_surface_png(
+    path: Path,
+    mesh,
+    displacement: np.ndarray,
+    cell_values: np.ndarray,
+    displacement_scale: float,
+) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    deformed = mesh.nodes + displacement_scale * displacement
+    faces, values = _boundary_faces_with_cell_values(mesh, cell_values)
+    polygons = [deformed[face] for face in faces]
+    collection = Poly3DCollection(polygons, linewidths=0.25, edgecolors="0.25")
+    collection.set_array(values)
+    collection.set_cmap("viridis")
+    collection.set_clim(float(values.min()), float(values.max()))
+
+    fig = plt.figure(figsize=(8, 5), constrained_layout=True)
+    ax = fig.add_subplot(111, projection="3d")
+    ax.add_collection3d(collection)
+    _set_equal_3d_axes(ax, deformed)
+    ax.view_init(elev=22, azim=-58)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+    colorbar = fig.colorbar(collection, ax=ax, shrink=0.7, pad=0.02)
+    colorbar.set_label("von Mises stress")
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def _boundary_faces_with_cell_values(mesh, cell_values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    candidates: dict[tuple[int, int, int], tuple[tuple[int, int, int], float] | None] = {}
+    for element_index, tet in enumerate(mesh.elements):
+        local_faces = (
+            (tet[1], tet[2], tet[3]),
+            (tet[0], tet[3], tet[2]),
+            (tet[0], tet[1], tet[3]),
+            (tet[0], tet[2], tet[1]),
+        )
+        for face in local_faces:
+            key = tuple(sorted(int(i) for i in face))
+            if key in candidates:
+                candidates[key] = None
+            else:
+                candidates[key] = (tuple(int(i) for i in face), float(cell_values[element_index]))
+    boundary = [entry for entry in candidates.values() if entry is not None]
+    return (
+        np.array([face for face, _ in boundary], dtype=np.int64),
+        np.array([value for _, value in boundary], dtype=float),
+    )
+
+
+def _set_equal_3d_axes(ax, points: np.ndarray) -> None:
+    mins = points.min(axis=0)
+    maxs = points.max(axis=0)
+    center = 0.5 * (mins + maxs)
+    radius = 0.5 * float((maxs - mins).max())
+    ax.set_xlim(center[0] - radius, center[0] + radius)
+    ax.set_ylim(center[1] - radius, center[1] + radius)
+    ax.set_zlim(center[2] - radius, center[2] + radius)
 
 
 def _box_boundary_nodes(mesh) -> np.ndarray:

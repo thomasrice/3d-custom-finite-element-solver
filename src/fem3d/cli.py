@@ -8,7 +8,13 @@ import numpy as np
 from fem3d.boundary import DirichletBC
 from fem3d.material import IsotropicMaterial
 from fem3d.mesh import box_mesh
-from fem3d.recovery import element_strains, element_stresses, von_mises
+from fem3d.recovery import (
+    element_strains,
+    element_stresses,
+    engineering_strain_tensors,
+    stress_tensors,
+    von_mises,
+)
 from fem3d.solver import LinearElasticityProblem, TractionLoad, reaction_forces, solve_linear_elasticity
 from fem3d.validation import (
     ConvergenceRow,
@@ -19,7 +25,7 @@ from fem3d.validation import (
     quadratic_gradient,
     write_convergence_csv,
 )
-from fem3d.vtk import write_vtk
+from fem3d.vtk import CellScalar, CellTensor, write_vtk
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -63,11 +69,11 @@ def _run_beam(args: argparse.Namespace) -> None:
         args.output,
         mesh,
         displacement,
-        cell_data={
-            "strain": element_strains(mesh, displacement),
-            "stress": stress,
-            "von_mises": von_mises(stress),
-        },
+        cell_data=[
+            CellTensor("strain", engineering_strain_tensors(element_strains(mesh, displacement))),
+            CellTensor("stress", stress_tensors(stress)),
+            CellScalar("von_mises", von_mises(stress)),
+        ],
     )
     print(f"wrote {args.output}")
     print(f"max |u| = {np.linalg.norm(displacement, axis=1).max():.6e}")

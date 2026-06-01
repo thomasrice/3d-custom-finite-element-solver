@@ -2,7 +2,13 @@ import numpy as np
 
 from fem3d.material import IsotropicMaterial
 from fem3d.mesh import box_mesh
-from fem3d.recovery import element_strains, element_stresses, von_mises
+from fem3d.recovery import (
+    element_strains,
+    element_stresses,
+    engineering_strain_tensors,
+    stress_tensors,
+    von_mises,
+)
 
 
 def test_element_strains_recover_affine_engineering_strain():
@@ -29,3 +35,14 @@ def test_element_stresses_and_von_mises_for_uniaxial_strain():
 
     assert np.allclose(stresses, np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0]))
     assert np.allclose(von_mises(stresses), 0.1)
+
+
+def test_voigt_conversions_use_correct_shear_conventions():
+    strain = np.array([[1.0, 2.0, 3.0, 0.4, 0.6, 0.8]])
+    stress = np.array([[1.0, 2.0, 3.0, 0.4, 0.6, 0.8]])
+
+    strain_tensor = engineering_strain_tensors(strain)[0]
+    stress_tensor = stress_tensors(stress)[0]
+
+    assert np.allclose(strain_tensor, [[1.0, 0.2, 0.4], [0.2, 2.0, 0.3], [0.4, 0.3, 3.0]])
+    assert np.allclose(stress_tensor, [[1.0, 0.4, 0.8], [0.4, 2.0, 0.6], [0.8, 0.6, 3.0]])

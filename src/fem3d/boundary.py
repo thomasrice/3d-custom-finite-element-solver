@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 
-
-VectorFunction = Callable[[np.ndarray], np.ndarray]
+from fem3d.types import VectorValue
 
 
 @dataclass(frozen=True)
 class DirichletBC:
     node_ids: np.ndarray
-    values: VectorFunction | np.ndarray
+    values: VectorValue
     components: tuple[int, ...] = (0, 1, 2)
 
     def prescribed_dofs(self, nodes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

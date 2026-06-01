@@ -7,6 +7,7 @@ from fem3d.material import IsotropicMaterial
 from fem3d.mesh import box_mesh
 from fem3d.solver import (
     LinearElasticityProblem,
+    SolverOptions,
     TractionLoad,
     assemble_load_vector,
     reaction_forces,
@@ -112,7 +113,7 @@ def test_cg_solver_matches_direct_solver():
     )
 
     direct = solve_linear_elasticity(problem)
-    iterative = solve_linear_elasticity(problem, method="cg", rtol=1.0e-12)
+    iterative = solve_linear_elasticity(problem, solver=SolverOptions.cg(rtol=1.0e-12))
 
     assert np.allclose(iterative, direct, atol=1e-10)
 

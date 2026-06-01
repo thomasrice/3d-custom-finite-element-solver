@@ -12,6 +12,7 @@ from fem3d.recovery import (
 )
 from fem3d.solver import (
     LinearElasticityProblem,
+    SolverOptions,
     TractionLoad,
     assemble_load_vector,
     reaction_forces,
@@ -27,6 +28,7 @@ __all__ = [
     "IsotropicMaterial",
     "LinearElasticityProblem",
     "MeshQuality",
+    "SolverOptions",
     "TetMesh",
     "TractionLoad",
     "assemble_load_vector",

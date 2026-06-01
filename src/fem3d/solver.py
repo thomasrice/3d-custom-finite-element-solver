@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 import warnings
 
 import numpy as np
@@ -10,12 +11,34 @@ from fem3d.assembly import assemble_body_force, assemble_stiffness, assemble_tra
 from fem3d.boundary import DirichletBC
 from fem3d.material import IsotropicMaterial
 from fem3d.mesh import TetMesh
+from fem3d.types import VectorValue
 
 
 @dataclass(frozen=True)
 class TractionLoad:
     faces: np.ndarray
-    traction: object
+    traction: VectorValue
+
+
+@dataclass(frozen=True)
+class SolverOptions:
+    method: Literal["direct", "cg"] = "direct"
+    rtol: float = 1.0e-10
+    atol: float = 0.0
+    maxiter: int | None = None
+
+    @classmethod
+    def direct(cls) -> "SolverOptions":
+        return cls(method="direct")
+
+    @classmethod
+    def cg(
+        cls,
+        rtol: float = 1.0e-10,
+        atol: float = 0.0,
+        maxiter: int | None = None,
+    ) -> "SolverOptions":
+        return cls(method="cg", rtol=rtol, atol=atol, maxiter=maxiter)
 
 
 @dataclass(frozen=True)
@@ -23,17 +46,15 @@ class LinearElasticityProblem:
     mesh: TetMesh
     material: IsotropicMaterial
     dirichlet_bcs: tuple[DirichletBC, ...]
-    body_force: object | None = None
+    body_force: VectorValue | None = None
     traction_loads: tuple[TractionLoad, ...] = field(default_factory=tuple)
 
 
 def solve_linear_elasticity(
     problem: LinearElasticityProblem,
-    method: str = "direct",
-    rtol: float = 1.0e-10,
-    atol: float = 0.0,
-    maxiter: int | None = None,
+    solver: SolverOptions | None = None,
 ) -> np.ndarray:
+    options = SolverOptions.direct() if solver is None else solver
     stiffness = assemble_stiffness(problem.mesh, problem.material)
     rhs = assemble_load_vector(problem)
 
@@ -46,7 +67,7 @@ def solve_linear_elasticity(
     _check_rigid_body_modes_constrained(problem.mesh, fixed_dofs)
     reduced_rhs = rhs[free_dofs] - stiffness[free_dofs][:, fixed_dofs] @ fixed_values
     reduced_stiffness = stiffness[free_dofs][:, free_dofs]
-    if method == "direct":
+    if options.method == "direct":
         with warnings.catch_warnings():
             warnings.filterwarnings("error", category=MatrixRankWarning)
             try:
@@ -56,19 +77,19 @@ def solve_linear_elasticity(
                     "linear system is singular; check that Dirichlet constraints "
                     "remove all rigid-body modes"
                 ) from exc
-    elif method == "cg":
+    elif options.method == "cg":
         reduced_solution, info = cg(
             reduced_stiffness,
             reduced_rhs,
-            rtol=rtol,
-            atol=atol,
-            maxiter=maxiter,
+            rtol=options.rtol,
+            atol=options.atol,
+            maxiter=options.maxiter,
         )
         if info != 0:
             raise RuntimeError(f"CG solver did not converge; info={info}")
         solution[free_dofs] = reduced_solution
     else:
-        raise ValueError(f"unknown solver method {method!r}")
+        raise ValueError(f"unknown solver method {options.method!r}")
     if not np.all(np.isfinite(solution)):
         raise RuntimeError(
             "linear solve produced non-finite values; check mesh quality and constraints"

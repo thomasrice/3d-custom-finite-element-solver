@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from typing import Callable
-
 import numpy as np
 from scipy.sparse import coo_matrix, csr_matrix
 
 from fem3d.element import element_stiffness, tet_geometry
 from fem3d.material import IsotropicMaterial
 from fem3d.mesh import TetMesh
-
-VectorFunction = Callable[[np.ndarray], np.ndarray]
+from fem3d.types import VectorValue
 
 
 TET_QUAD_BARY = np.array(
@@ -58,7 +55,7 @@ def assemble_stiffness(mesh: TetMesh, material: IsotropicMaterial) -> csr_matrix
     return coo_matrix((data, (rows, cols)), shape=(n_dof, n_dof)).tocsr()
 
 
-def assemble_body_force(mesh: TetMesh, body_force: VectorFunction | np.ndarray | None) -> np.ndarray:
+def assemble_body_force(mesh: TetMesh, body_force: VectorValue | None) -> np.ndarray:
     mesh.require_valid_quality()
     rhs = np.zeros(3 * mesh.n_nodes, dtype=float)
     if body_force is None:
@@ -79,7 +76,7 @@ def assemble_body_force(mesh: TetMesh, body_force: VectorFunction | np.ndarray |
 def assemble_traction(
     mesh: TetMesh,
     faces: np.ndarray,
-    traction: VectorFunction | np.ndarray,
+    traction: VectorValue,
 ) -> np.ndarray:
     rhs = np.zeros(3 * mesh.n_nodes, dtype=float)
     face_array = np.asarray(faces, dtype=np.int64)
@@ -94,7 +91,7 @@ def assemble_traction(
     return rhs
 
 
-def _vector_value(fn_or_vector: VectorFunction | np.ndarray, points: np.ndarray) -> np.ndarray:
+def _vector_value(fn_or_vector: VectorValue, points: np.ndarray) -> np.ndarray:
     if callable(fn_or_vector):
         value = np.asarray(fn_or_vector(points), dtype=float)
     else:

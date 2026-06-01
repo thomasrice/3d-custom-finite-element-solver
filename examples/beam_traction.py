@@ -11,7 +11,7 @@ from fem3d.workflows import format_beam_result, run_beam_case
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=Path("beam_traction.vtk"))
+    parser.add_argument("--output", type=Path, default=Path("results/beam_traction.vtk"))
     parser.add_argument("--nx", type=int, default=8)
     parser.add_argument("--ny", type=int, default=2)
     parser.add_argument("--nz", type=int, default=2)

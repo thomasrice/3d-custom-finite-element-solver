@@ -39,7 +39,17 @@ order in L2 and first order in H1.
 Generate a simple loaded beam result for ParaView:
 
 ```bash
-python examples/beam_traction.py --output results/beam_traction.vtk
+python examples/beam_traction.py
+python examples/uniaxial_tension.py
+python examples/self_weight_beam.py
+python examples/bending_refinement.py
+```
+
+Generate PNGs that can be inspected without ParaView:
+
+```bash
+python examples/render_deformed_mesh.py
+python examples/convergence_plot.py
 ```
 
 After installing the package, the same workflows are available as CLI commands:

@@ -6,6 +6,8 @@ from fem3d.mesh import box_mesh
 from fem3d.recovery import element_strains, element_stresses
 from fem3d.solver import LinearElasticityProblem, TractionLoad, solve_linear_elasticity_result
 
+from helpers import boundary_nodes
+
 
 def test_uniaxial_tension_recovers_hand_calculated_stress_and_strain():
     length = 2.0
@@ -52,16 +54,6 @@ def test_simple_shear_recovers_hand_calculated_shear_stress():
     poisson = 0.2
     material = IsotropicMaterial(young=young, poisson=poisson)
     mesh = box_mesh(2, 2, 2)
-    fixed = mesh.boundary_nodes(
-        lambda x: (
-            np.isclose(x[:, 0], 0.0)
-            | np.isclose(x[:, 0], 1.0)
-            | np.isclose(x[:, 1], 0.0)
-            | np.isclose(x[:, 1], 1.0)
-            | np.isclose(x[:, 2], 0.0)
-            | np.isclose(x[:, 2], 1.0)
-        )
-    )
 
     def exact_shear_displacement(points):
         return np.column_stack((gamma * points[:, 1], np.zeros((len(points), 2))))
@@ -69,7 +61,7 @@ def test_simple_shear_recovers_hand_calculated_shear_stress():
     problem = LinearElasticityProblem(
         mesh=mesh,
         material=material,
-        dirichlet_bcs=(DirichletBC(fixed, exact_shear_displacement),),
+        dirichlet_bcs=(DirichletBC(boundary_nodes(mesh), exact_shear_displacement),),
     )
 
     result = solve_linear_elasticity_result(problem)

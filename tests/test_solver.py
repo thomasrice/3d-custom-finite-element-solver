@@ -21,6 +21,8 @@ from fem3d.validation import (
     quadratic_gradient,
 )
 
+from helpers import boundary_nodes
+
 
 def affine_displacement(points):
     return np.column_stack(
@@ -35,20 +37,10 @@ def affine_displacement(points):
 def test_constant_strain_patch_test_reproduces_affine_field():
     mesh = box_mesh(2, 2, 2)
     material = IsotropicMaterial(young=10.0, poisson=0.25)
-    boundary_nodes = mesh.boundary_nodes(
-        lambda x: (
-            np.isclose(x[:, 0], 0.0)
-            | np.isclose(x[:, 0], 1.0)
-            | np.isclose(x[:, 1], 0.0)
-            | np.isclose(x[:, 1], 1.0)
-            | np.isclose(x[:, 2], 0.0)
-            | np.isclose(x[:, 2], 1.0)
-        )
-    )
     problem = LinearElasticityProblem(
         mesh=mesh,
         material=material,
-        dirichlet_bcs=(DirichletBC(boundary_nodes, affine_displacement),),
+        dirichlet_bcs=(DirichletBC(boundary_nodes(mesh), affine_displacement),),
     )
 
     displacement = solve_linear_elasticity(problem)
@@ -168,21 +160,11 @@ def test_quadratic_manufactured_solution_converges_at_expected_rates():
     hs = []
     for n in (2, 4, 8):
         mesh = box_mesh(n, n, n)
-        boundary_nodes = mesh.boundary_nodes(
-            lambda x: (
-                np.isclose(x[:, 0], 0.0)
-                | np.isclose(x[:, 0], 1.0)
-                | np.isclose(x[:, 1], 0.0)
-                | np.isclose(x[:, 1], 1.0)
-                | np.isclose(x[:, 2], 0.0)
-                | np.isclose(x[:, 2], 1.0)
-            )
-        )
         problem = LinearElasticityProblem(
             mesh=mesh,
             material=material,
             body_force=quadratic_body_force(material),
-            dirichlet_bcs=(DirichletBC(boundary_nodes, quadratic_displacement),),
+            dirichlet_bcs=(DirichletBC(boundary_nodes(mesh), quadratic_displacement),),
         )
         displacement = solve_linear_elasticity(problem)
         errors.append(

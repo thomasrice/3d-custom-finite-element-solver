@@ -10,6 +10,8 @@ from fem3d.recovery import (
     von_mises,
 )
 
+from helpers import symmetric_tensor_to_voigt
+
 
 def test_element_strains_recover_affine_engineering_strain():
     mesh = box_mesh(1, 1, 1)
@@ -71,9 +73,5 @@ def test_von_mises_is_invariant_under_stress_tensor_rotation():
         ]
     )
     rotated = rotation @ stress_tensor @ rotation.T
-    stress_voigt = np.array(
-        [stress_tensor[0, 0], stress_tensor[1, 1], stress_tensor[2, 2], stress_tensor[0, 1], stress_tensor[1, 2], stress_tensor[0, 2]]
-    )
-    rotated_voigt = np.array([rotated[0, 0], rotated[1, 1], rotated[2, 2], rotated[0, 1], rotated[1, 2], rotated[0, 2]])
 
-    assert np.allclose(von_mises(stress_voigt), von_mises(rotated_voigt))
+    assert np.allclose(von_mises(symmetric_tensor_to_voigt(stress_tensor)), von_mises(symmetric_tensor_to_voigt(rotated)))

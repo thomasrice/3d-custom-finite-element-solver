@@ -35,6 +35,10 @@ def affine_displacement(points: np.ndarray) -> np.ndarray:
     )
 
 
+def symmetric_tensor_to_voigt(tensor: np.ndarray) -> np.ndarray:
+    return np.array([tensor[0, 0], tensor[1, 1], tensor[2, 2], tensor[0, 1], tensor[1, 2], tensor[0, 2]])
+
+
 def clamped_beam_problem(
     traction: np.ndarray,
     nx: int = 4,

@@ -2,7 +2,7 @@
 
 from fem3d.boundary import DirichletBC
 from fem3d.material import IsotropicMaterial
-from fem3d.mesh import TetMesh, box_mesh
+from fem3d.mesh import MeshQuality, TetMesh, box_mesh
 from fem3d.recovery import element_strains, element_stresses, von_mises
 from fem3d.solver import (
     LinearElasticityProblem,
@@ -17,6 +17,7 @@ __all__ = [
     "DirichletBC",
     "IsotropicMaterial",
     "LinearElasticityProblem",
+    "MeshQuality",
     "TetMesh",
     "TractionLoad",
     "assemble_load_vector",

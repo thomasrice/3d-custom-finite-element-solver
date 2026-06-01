@@ -63,6 +63,52 @@ class TetMesh:
             raise ValueError("face predicate must return shape (n_boundary_faces,)")
         return boundary_faces[mask]
 
+    def signed_volumes(self) -> np.ndarray:
+        volumes = np.empty(self.n_elements, dtype=float)
+        for index, element in enumerate(self.elements):
+            matrix = np.ones((4, 4), dtype=float)
+            matrix[:, 1:] = self.nodes[element]
+            volumes[index] = np.linalg.det(matrix) / 6.0
+        return volumes
+
+    def scaled_jacobians(self) -> np.ndarray:
+        quality = np.empty(self.n_elements, dtype=float)
+        for index, element in enumerate(self.elements):
+            coords = self.nodes[element]
+            jacobian = np.column_stack((coords[1] - coords[0], coords[2] - coords[0], coords[3] - coords[0]))
+            denominator = np.linalg.norm(jacobian[:, 0]) * np.linalg.norm(jacobian[:, 1]) * np.linalg.norm(jacobian[:, 2])
+            quality[index] = 0.0 if denominator == 0.0 else np.linalg.det(jacobian) / denominator
+        return quality
+
+    def quality(self) -> "MeshQuality":
+        signed_volumes = self.signed_volumes()
+        scaled_jacobians = self.scaled_jacobians()
+        return MeshQuality(
+            min_signed_volume=float(np.min(signed_volumes)),
+            max_signed_volume=float(np.max(signed_volumes)),
+            min_scaled_jacobian=float(np.min(scaled_jacobians)),
+            inverted_elements=np.flatnonzero(signed_volumes <= 0.0),
+        )
+
+    def require_valid_quality(self, min_scaled_jacobian: float = 1.0e-12) -> None:
+        quality = self.quality()
+        if len(quality.inverted_elements) > 0:
+            bad = ", ".join(str(int(i)) for i in quality.inverted_elements[:10])
+            raise ValueError(f"mesh contains inverted or degenerate tetrahedra: {bad}")
+        if quality.min_scaled_jacobian < min_scaled_jacobian:
+            raise ValueError(
+                "mesh contains near-degenerate tetrahedra: "
+                f"min scaled Jacobian {quality.min_scaled_jacobian:.3e}"
+            )
+
+
+@dataclass(frozen=True)
+class MeshQuality:
+    min_signed_volume: float
+    max_signed_volume: float
+    min_scaled_jacobian: float
+    inverted_elements: np.ndarray
+
 
 def box_mesh(
     nx: int,

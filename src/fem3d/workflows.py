@@ -91,6 +91,12 @@ class DeformedMeshRenderResult:
     displacement_scale: float
 
 
+@dataclass(frozen=True)
+class ConvergencePlotResult:
+    study: ConvergenceStudy
+    png: Path
+
+
 def run_beam_case(
     output: str | Path,
     nx: int = 8,
@@ -352,6 +358,19 @@ def run_convergence_study(
     return ConvergenceStudy(rows=rows, l2_rate=l2_rate, h1_rate=h1_rate, csv=csv_path)
 
 
+def run_convergence_plot_demo(
+    levels: list[int],
+    png: str | Path = Path("results/convergence_error.png"),
+    vtk_dir: str | Path = Path("results/convergence_vtk"),
+    csv: str | Path = Path("results/convergence.csv"),
+) -> ConvergencePlotResult:
+    png_path = Path(png)
+    study = run_convergence_study(levels, vtk_dir=vtk_dir, csv=csv)
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+    _render_convergence_png(png_path, study)
+    return ConvergencePlotResult(study=study, png=png_path)
+
+
 def format_beam_result(result: BeamResult) -> str:
     return "\n".join(
         (
@@ -422,6 +441,11 @@ def format_convergence_study(result: ConvergenceStudy) -> str:
     return "\n".join(lines)
 
 
+def format_convergence_plot_result(result: ConvergencePlotResult) -> str:
+    lines = [format_convergence_study(result.study), f"wrote {result.png}"]
+    return "\n".join(lines)
+
+
 def _write_bending_refinement_csv(path: Path, rows: list[BendingRefinementRow]) -> None:
     with path.open("w", encoding="utf-8") as fh:
         fh.write("level,nx,ny,nz,dofs,tip_deflection,euler_bernoulli_tip_deflection,ratio\n")
@@ -467,6 +491,32 @@ def _render_deformed_surface_png(
     colorbar.set_label("von Mises stress")
     fig.savefig(path, dpi=180)
     plt.close(fig)
+
+
+def _render_convergence_png(path: Path, study: ConvergenceStudy) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    h = np.array([row.h for row in study.rows], dtype=float)
+    l2 = np.array([row.l2 for row in study.rows], dtype=float)
+    h1 = np.array([row.h1_seminorm for row in study.rows], dtype=float)
+
+    fig, ax = plt.subplots(figsize=(7, 5), constrained_layout=True)
+    ax.loglog(h, l2, "o-", label=_slope_label("L2", study.l2_rate))
+    ax.loglog(h, h1, "s-", label=_slope_label("H1 seminorm", study.h1_rate))
+    ax.invert_xaxis()
+    ax.grid(True, which="both", linestyle=":", linewidth=0.7)
+    ax.set_xlabel("mesh size h")
+    ax.set_ylabel("error norm")
+    ax.legend()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def _slope_label(name: str, rate: float | None) -> str:
+    return name if rate is None else f"{name} slope {rate:.2f}"
 
 
 def _boundary_faces_with_cell_values(mesh, cell_values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

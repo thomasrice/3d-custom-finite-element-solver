@@ -1,5 +1,8 @@
 import numpy as np
 
+from fem3d.assembly import assemble_stiffness
+from fem3d.material import IsotropicMaterial
+from fem3d.mesh import box_mesh
 from fem3d.solver import assemble_system, solve_linear_elasticity_result
 
 from helpers import clamped_beam_problem
@@ -27,3 +30,13 @@ def test_linear_elasticity_solution_obeys_scaling_and_superposition():
 
     assert np.allclose(u_2f1, 2.0 * u1, rtol=1e-10, atol=1e-12)
     assert np.allclose(u_f1_plus_f2, u1 + u2, rtol=1e-10, atol=1e-12)
+
+
+def test_unconstrained_stiffness_has_six_rigid_body_null_modes():
+    mesh = box_mesh(1, 1, 1)
+    stiffness = assemble_stiffness(mesh, IsotropicMaterial(young=10.0, poisson=0.25)).toarray()
+
+    eigenvalues = np.linalg.eigvalsh(stiffness)
+    near_zero = np.abs(eigenvalues) < 1e-9 * eigenvalues[-1]
+
+    assert np.count_nonzero(near_zero) == 6
